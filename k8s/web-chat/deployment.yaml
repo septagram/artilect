@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-chat
+  labels:
+    app: web-chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-chat
+  template:
+    metadata:
+      labels:
+        app: web-chat
+    spec:
+      containers:
+      - name: web-chat
+        image: web-chat:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: INFER_URL
+          value: "http://infer"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-chat
+spec:
+  type: ClusterIP
+  selector:
+    app: web-chat
+  ports:
+  - port: 8080
+    targetPort: 8080 

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: infer-config
+data:
+  PROXY_UPSTREAM_ADDR: ""  # Will be determined by init script
+  PROXY_UPSTREAM_PORT: ""  # Will be determined by init script 

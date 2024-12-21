@@ -1,0 +1,14 @@
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Environment
+.env
+
+# Kubernetes
+kubeconfig
+
+# OS specific
+.DS_Store
+Thumbs.db 
