@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: web-chat
+  name: chat
   labels:
-    app: web-chat
+    app: chat
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: web-chat
+      app: chat
   template:
     metadata:
       labels:
-        app: web-chat
+        app: chat
     spec:
       containers:
-      - name: web-chat
-        image: web-chat:latest
+      - name: chat
+        image: chat:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
@@ -27,11 +27,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: web-chat
+  name: chat
 spec:
   type: ClusterIP
   selector:
-    app: web-chat
+    app: chat
   ports:
   - port: 8080
     targetPort: 8080 

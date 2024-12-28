@@ -356,6 +356,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chat-front"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "dioxus-logger",
+ "dioxus-web",
+ "futures-util",
+ "reqwest",
+ "serde_json",
+ "web-sys",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4749,19 +4762,6 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "web-chat-fe"
-version = "0.1.0"
-dependencies = [
- "dioxus",
- "dioxus-logger",
- "dioxus-web",
- "futures-util",
- "reqwest",
- "serde_json",
  "web-sys",
 ]
 

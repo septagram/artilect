@@ -1,5 +1,5 @@
 [package]
-name = "web-chat-fe"
+name = "chat-front"
 version = "0.1.0"
 authors = ["Igor Novikov <septagramm@gmail.com>"]
 edition = "2021"

@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: web-chat-fe
+  name: chat-front
   labels:
-    app: web-chat-fe
+    app: chat-front
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: web-chat-fe
+      app: chat-front
   template:
     metadata:
       labels:
-        app: web-chat-fe
+        app: chat-front
     spec:
       containers:
-      - name: web-chat-fe
-        image: web-chat-fe:latest
+      - name: chat-front
+        image: chat-front:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 80
@@ -24,11 +24,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: web-chat-fe
+  name: chat-front
 spec:
   type: NodePort
   selector:
-    app: web-chat-fe
+    app: chat-front
   ports:
   - port: 80
     targetPort: 80

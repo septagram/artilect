@@ -1,12 +1,12 @@
 [application]
 
 # App (Project) Name
-name = "web-chat-fe"
+name = "chat-front"
 
 [web.app]
 
 # HTML title tag content
-title = "web-chat-fe"
+title = "chat-front"
 
 # include `assets` in web platform
 [web.resource]

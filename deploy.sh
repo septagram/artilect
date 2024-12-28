@@ -20,39 +20,39 @@ echo "🏗️  Building Docker images..."
 echo "Building infer image..."
 docker build -t infer:latest ./infer
 
-echo "Building web-chat image..."
-docker build -t web-chat:latest ./sensors-actuators/web-chat
+echo "Building chat image..."
+docker build -t chat:latest ./sensors-actuators/chat
 
-echo "Building web-chat-fe image..."
-docker build -t web-chat-fe:latest ./sensors-actuators/web-chat-fe
+echo "Building chat-front image..."
+docker build -t chat-front:latest ./sensors-actuators/chat-front
 
 # Apply Kubernetes configurations
 echo "📦 Applying Kubernetes configurations..."
 echo "Applying infer configurations..."
 kubectl apply -f k8s/infer/
 
-echo "Applying web-chat configurations..."
-kubectl apply -f k8s/web-chat/
+echo "Applying chat configurations..."
+kubectl apply -f k8s/chat/
 
-echo "Applying web-chat-fe configurations..."
-kubectl apply -f k8s/web-chat-fe/
+echo "Applying chat-front configurations..."
+kubectl apply -f k8s/chat-front/
 
 # Wait for pods to be ready
 echo "⏳ Waiting for pods to be ready..."
 kubectl wait --for=condition=ready pod -l app=infer --timeout=60s
-kubectl wait --for=condition=ready pod -l app=web-chat --timeout=60s
-kubectl wait --for=condition=ready pod -l app=web-chat-fe --timeout=60s
+kubectl wait --for=condition=ready pod -l app=chat --timeout=60s
+kubectl wait --for=condition=ready pod -l app=chat-front --timeout=60s
 
 echo "✅ Deployment complete!"
 echo
 echo "To check the status of your pods:"
 echo "  kubectl get pods"
 echo
-echo "To test the web-chat service:"
-echo "  kubectl port-forward service/web-chat 8080:8080"
+echo "To test the chat service:"
+echo "  kubectl port-forward service/chat 8080:8080"
 echo
 echo "To test the infer service:"
 echo "  kubectl port-forward service/infer 8080:80"
 echo
 echo "To access the frontend:"
-echo "  minikube service web-chat-fe --url"
+echo "  minikube service chat-front --url"
