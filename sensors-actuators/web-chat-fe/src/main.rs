@@ -6,13 +6,14 @@ enum Route {
     #[layout(Navbar)]
     #[route("/")]
     Home {},
-    #[route("/blog/:id")]
-    Blog { id: i32 },
+    // #[route("/blog/:id")]
+    // Blog { id: i32 },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
+fn initial_messages() -> Vec<Message> {
+    vec![]
+}
 
 fn main() {
     dioxus::launch(App);
@@ -22,60 +23,69 @@ fn main() {
 fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        // document::Link { rel: "stylesheet", href: MAIN_CSS }
         Router::<Route> {}
     }
 }
 
-#[component]
-pub fn Hero() -> Element {
-    rsx! {
-        div {
-            id: "hero",
-            img { src: HEADER_SVG, id: "header" }
-            div { id: "links",
-                a { href: "https://dioxuslabs.com/learn/0.6/", "📚 Learn Dioxus" }
-                a { href: "https://dioxuslabs.com/awesome", "🚀 Awesome Dioxus" }
-                a { href: "https://github.com/dioxus-community/", "📡 Community Libraries" }
-                a { href: "https://github.com/DioxusLabs/sdk", "⚙️ Dioxus Development Kit" }
-                a { href: "https://marketplace.visualstudio.com/items?itemName=DioxusLabs.dioxus", "💫 VSCode Extension" }
-                a { href: "https://discord.gg/XgGxMSkvUM", "👋 Community Discord" }
-            }
-        }
-    }
+#[derive(Clone)]
+struct Message {
+    text: String,
+    is_user: bool,
 }
 
-/// Home page
+fn send_message(message: &str) {
+    web_sys::window().unwrap().alert_with_message(message).unwrap();
+}
+
 #[component]
 fn Home() -> Element {
+    let mut input = use_signal(|| String::new());
+
+    let handle_send = move |_| {
+        if !input.read().is_empty() {
+            send_message(&input.read());
+            // do_alert(&input.read()());
+            //document::window().alert(&format!("Message sent: {}", input));
+            input.set(String::new());
+        }
+    };
+
+    let handle_keypress = move |evt: KeyboardEvent| {
+        if evt.key() == Key::Enter && !evt.modifiers().shift() {
+            evt.prevent_default();
+            send_message(&input.read());
+            input.set(String::new());
+        }
+    };
+
     rsx! {
-        Hero {}
-
-    }
-}
-
-/// Blog page
-#[component]
-pub fn Blog(id: i32) -> Element {
-    rsx! {
-        div {
-            id: "blog",
-
-            // Content
-            h1 { "This is blog #{id}!" }
-            p { "In blog #{id}, we show how the Dioxus router works and how URL parameters can be passed as props to our route components." }
-
-            // Navigation links
-            Link {
-                to: Route::Blog { id: id - 1 },
-                "Previous"
+        div { class: "chat",
+            div { class: "chat__history",
+                for msg in initial_messages() {
+                    div {
+                        class: if msg.is_user { "chat__message chat__message--user" } else { "chat__message chat__message--system" },
+                        p { class: "chat__message-text", "{msg.text}" }
+                    }
+                }
             }
-            span { " <---> " }
-            Link {
-                to: Route::Blog { id: id + 1 },
-                "Next"
+            div { class: "chat__input",
+                textarea {
+                    class: "chat__input-field",
+                    placeholder: "Type your message...",
+                    value: "{input}",
+                    onkeydown: handle_keypress,
+                    oninput: move |evt| input.set(evt.value().clone()),
+                }
+                button {
+                    class: "chat__send-button",
+                    disabled: input.read().is_empty(),
+                    onclick: handle_send,
+                    "Send"
+                }
             }
         }
+        style { {include_str!("style.css")} }
     }
 }
 
@@ -89,10 +99,10 @@ fn Navbar() -> Element {
                 to: Route::Home {},
                 "Home"
             }
-            Link {
-                to: Route::Blog { id: 1 },
-                "Blog"
-            }
+            // Link {
+            //     to: Route::Blog { id: 1 },
+            //     "Blog"
+            // }
         }
 
         Outlet::<Route> {}
