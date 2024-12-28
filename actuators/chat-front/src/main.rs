@@ -72,21 +72,24 @@ fn Home() -> Element {
     let mut messages = use_signal(|| initial_messages());
     info!("Test console, message count: {}", messages.len());
 
-    let handle_send = use_coroutine(move |mut rx: UnboundedReceiver<String> | async move {
-        while let Some(message) = rx.next().await {
+    let handle_send = use_coroutine(move |mut rx: UnboundedReceiver<()> | async move {
+        while let Some(_) = rx.next().await {
+            let message = input.read().clone();
+            input.set(String::new());
+            let mut messages_with_sent = messages.read().clone();
+            messages_with_sent.push(Message {
+                text: message.clone(),
+                is_user: true,
+            });
+            messages.set(messages_with_sent.clone());
             match send_message(&message).await {
                 Ok(response) => {
-                    let mut new_messages = messages.read().clone();
-                    new_messages.push(Message {
-                        text: message,
-                        is_user: true,
-                    });
-                    new_messages.push(Message {
+                    messages_with_sent.push(Message {
                         text: response,
                         is_user: false,
                     });
-                    info!("Updated messages: {:?}", new_messages);
-                    messages.set(new_messages);
+                    info!("Updated messages: {:?}", messages_with_sent);
+                    messages.set(messages_with_sent);
                 }
                 Err(error) => {
                     web_sys::window().unwrap().alert_with_message(error.to_string().as_str()).unwrap();
@@ -98,8 +101,7 @@ fn Home() -> Element {
     let handle_keypress = move |evt: KeyboardEvent| {
         if evt.key() == Key::Enter && !evt.modifiers().shift() {
             evt.prevent_default();
-            handle_send.send(input.read().clone());
-            input.set(String::new());
+            handle_send.send(());
         }
     };
 
@@ -125,7 +127,7 @@ fn Home() -> Element {
                 button {
                     class: "chat__send-button",
                     disabled: input.read().is_empty(),
-                    onclick: move |_| handle_send.send(input.read().clone()),
+                    onclick: move |_| handle_send.send(()),
                     "Send"
                 }
             }
