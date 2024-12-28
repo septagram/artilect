@@ -13,4 +13,4 @@ COPY --from=builder /usr/src/chat/target/release/chat /usr/local/bin/chat
 
 EXPOSE 8080
 
-CMD ["chat"] 
+CMD ["chat"]

@@ -10,6 +10,6 @@ COPY . .
 RUN wasm-pack build --target web
 
 FROM nginx:alpine
-COPY --from=builder /usr/src/chat-front/dist /usr/share/nginx/html
+COPY --from=builder /usr/src/chat-front/target/dx/chat-front/release/web/public /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
