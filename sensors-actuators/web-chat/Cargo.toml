@@ -3,6 +3,9 @@ name = "web-chat"
 version = "0.1.0"
 edition = "2021"
 
+[toolchain]
+channel = "nightly"
+
 [dependencies]
 axum = "0.7"
 tokio = { version = "1.0", features = ["full"] }

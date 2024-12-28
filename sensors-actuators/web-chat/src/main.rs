@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 use axum::{
     routing::{get, post},
     Router,
