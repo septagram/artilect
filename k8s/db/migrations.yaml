@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrations
+spec:
+  template:
+    spec:
+      containers:
+      - name: refinery
+        image: duccos/refinery
+        args: ["migrate"]
+        env:
+        - name: REFINERY_DATABASE_URL
+          value: "postgres://postgres:postgres@db:5432/artilect"
+        volumeMounts:
+        - name: migrations
+          mountPath: /refinery/migrations
+      volumes:
+      - name: migrations
+        hostPath:
+          path: /db/migrations
+      restartPolicy: Never
+  backoffLimit: 4 

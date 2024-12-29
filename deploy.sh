@@ -26,6 +26,18 @@ docker build -t chat:latest ./sensors-actuators/chat
 echo "Building chat-front image..."
 docker build -t chat-front:latest ./sensors-actuators/chat-front
 
+echo "Applying database configurations..."
+kubectl apply -f k8s/db/configmap.yaml
+kubectl apply -f k8s/db/secret.yaml
+kubectl apply -f k8s/db/pvc.yaml
+kubectl apply -f k8s/db/deployment.yaml
+
+echo "Waiting for database to be ready..."
+kubectl wait --for=condition=ready pod -l app=postgres --timeout=60s
+
+echo "Running database migrations..."
+kubectl apply -f k8s/db/migrations.yaml
+
 # Apply Kubernetes configurations
 echo "📦 Applying Kubernetes configurations..."
 echo "Applying infer configurations..."
