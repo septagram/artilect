@@ -92,7 +92,7 @@ fn Home() -> Element {
                     messages.set(messages_with_sent);
                 }
                 Err(error) => {
-                    web_sys::window().unwrap().alert_with_message(error.to_string().as_str()).unwrap();
+                    error!("Error sending message: {}", error);
                 }
             }
         }
