@@ -12,3 +12,7 @@ kubeconfig
 # OS specific
 .DS_Store
 Thumbs.db 
+
+# Rust specific
+/target/
+**/*.rs.bk

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "actuators/chat/back",
+    "actuators/chat/front",
+    # "infer",
+]
+resolver = "2"

@@ -20,10 +20,10 @@ echo "🏗️  Building Docker images..."
 echo "Building infer image..."
 docker build -t infer:latest ./infer
 
-echo "Building chat image..."
-docker build -t chat:latest ./sensors-actuators/chat
+echo "Building chat backend image..."
+docker build -t chat:latest ./sensors-actuators/chat/back
 
-echo "Building chat-front image..."
+echo "Building chat frontend image..."
 docker build -t chat-front:latest ./sensors-actuators/chat-front
 
 echo "Applying database configurations..."
@@ -43,11 +43,11 @@ echo "📦 Applying Kubernetes configurations..."
 echo "Applying infer configurations..."
 kubectl apply -f k8s/infer/
 
-echo "Applying chat configurations..."
-kubectl apply -f k8s/chat/
+echo "Applying chat backend configurations..."
+kubectl apply -f k8s/chat/back/
 
-echo "Applying chat-front configurations..."
-kubectl apply -f k8s/chat-front/
+echo "Applying chat frontend configurations..."
+kubectl apply -f k8s/chat/front/
 
 # Wait for pods to be ready
 echo "⏳ Waiting for pods to be ready..."
