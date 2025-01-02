@@ -7,7 +7,7 @@ use std::error::Error;
 use futures_util::StreamExt;
 use dioxus::logger::tracing::{Level, trace, debug, info, warn, error};
 
-static BASE_URL: &str = "http://localhost:3001";
+static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
 
 async fn send_message(message: &str) -> Result<String, Box<dyn Error>> {
     let client = reqwest::Client::new();
@@ -47,7 +47,7 @@ fn initial_messages() -> Vec<Message> {
 }
 
 fn main() {
-    dioxus_logger::init(Level::INFO);
+    dioxus_logger::init(Level::INFO).unwrap();
     dioxus::launch(App);
 }
 

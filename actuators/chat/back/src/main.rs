@@ -66,7 +66,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Load configuration
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
     let infer_url = std::env::var("INFER_URL")
