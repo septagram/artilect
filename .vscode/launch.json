@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // {
+        //     "type": "lldb",
+        //     "request": "launch",
+        //     "name": "Chat Backend",
+        //     "cargo": {
+        //         "args": [
+        //             "run",
+        //             "-p",
+        //             "chat"
+        //         ]
+        //     },
+        //     "args": [],
+        //     // "cwd": "${workspaceFolder}/actuators/chat/back"
+        // },
+        // ⬆️ Appears intuitive, but doesn't work https://github.com/vadimcn/codelldb/issues/677
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Chat Backend",
+            "preLaunchTask": "build chat backend",
+            "program": "${workspaceFolder}/target/debug/chat",
+            "args": [],
+            "cwd": "${workspaceFolder}/actuators/chat/back"
+        },
+    ]
+} 

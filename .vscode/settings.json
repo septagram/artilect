@@ -1,0 +1,6 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./actuators/chat/back/Cargo.toml",
+        "./actuators/chat/front/Cargo.toml"
+    ]
+} 

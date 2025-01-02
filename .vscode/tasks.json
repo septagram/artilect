@@ -1,0 +1,44 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build chat backend",
+            "type": "cargo",
+            "command": "build",
+            "problemMatcher": ["$rustc"],
+            "group": "build",
+            "args": ["-p", "chat"],
+        },
+        {
+            "label": "run chat fe web",
+            "type": "shell",
+            "command": "dx",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
+            "args": ["serve", "--port=3000", "--platform=web"],
+            "options": {
+                "cwd": "${workspaceFolder}/actuators/chat/front"
+            },
+        },
+        {
+            "label": "run chat fe desktop",
+            "type": "shell",
+            "command": "dx",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
+            "args": ["serve", "--platform=desktop"],
+            "options": {
+                "cwd": "${workspaceFolder}/actuators/chat/front"
+            },
+        },
+        {
+            "label": "db migrate",
+            "type": "shell",
+            "command": "export $(envsubst < .env | xargs) && refinery migrate -e DATABASE_URL -p migrations/",
+            "options": {
+                "cwd": "${workspaceFolder}/db"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
