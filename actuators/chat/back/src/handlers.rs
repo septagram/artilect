@@ -15,9 +15,13 @@ pub async fn health_check() -> impl IntoResponse {
     Json(json!({"status": "ok"}))
 }
 
-async fn create_thread(pool: &PgPool, user_id: Uuid, self_user_id: Uuid) -> Result<Uuid, Box<dyn std::error::Error + Send + Sync>> {
+async fn create_thread(
+    pool: &PgPool,
+    user_id: Uuid,
+    self_user_id: Uuid,
+) -> Result<Uuid, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = pool.begin().await?;
-    
+
     // Create the thread
     let thread_id = sqlx::query!(
         r#"--sql
@@ -101,9 +105,17 @@ async fn respond_to_thread(
     #[derive(sqlx::FromRow)]
     struct MessageForAI {
         user_id: Uuid,
-        content: String, 
+        content: String,
         created_at: time::OffsetDateTime,
     }
+
+    let date_format = time::format_description::parse(
+        "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
+         sign:mandatory]:[offset_minute]",
+    )
+    .expect("Failed to parse date format");
+
+    let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
     let messages = sqlx::query_as!(
         MessageForAI,
@@ -125,7 +137,14 @@ async fn respond_to_thread(
             "user"
         }
         .to_string(),
-        content: msg.content,
+        content: format!(
+            "[{}] {}",
+            msg.created_at
+                .to_offset(timezone)
+                .format(&date_format)
+                .expect("Failed to format date"),
+            msg.content
+        ),
     })
     .collect::<Vec<_>>();
 
@@ -148,8 +167,7 @@ async fn respond_to_thread(
     {
         let content = message.get("content").and_then(Value::as_str).unwrap_or("");
         let (id, created_at) =
-            create_message(&state.pool, state.self_user.id, thread_id, &content)
-                .await?;
+            create_message(&state.pool, state.self_user.id, thread_id, &content).await?;
 
         // Create and return Message struct
         let message = Message {
@@ -166,7 +184,10 @@ async fn respond_to_thread(
     }
 }
 
-async fn chat(state: &AppState, request: &SendMessageRequest) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
+async fn chat(
+    state: &AppState,
+    request: &SendMessageRequest,
+) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
     let thread_id = match request.thread_id {
         Some(thread_id) => thread_id,
         None => create_thread(&state.pool, state.user_id, state.self_user.id).await?,
