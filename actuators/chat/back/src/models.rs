@@ -1,9 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChatRequest {
-    pub message: String,
-}
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct OpenAIRequest {

@@ -314,6 +314,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-macros"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "604fde5e028fea851ce1d8570bbdc034bec850d157f7569d10f347d06808c05c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.94",
+]
+
+[[package]]
 name = "backoff"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -503,15 +514,27 @@ version = "0.1.0"
 dependencies = [
  "async-openai",
  "axum",
+ "axum-macros",
+ "chat-dto",
  "dotenvy",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
  "sqlx",
+ "time",
  "tokio",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "chat-dto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "time",
  "uuid",
 ]
 
@@ -986,6 +1009,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
+ "serde",
 ]
 
 [[package]]

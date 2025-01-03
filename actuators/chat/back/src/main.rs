@@ -1,25 +1,20 @@
 #![feature(let_chains)]
 
 use axum::{
+    http::{HeaderValue, Method},
     routing::{get, post},
     Router,
-    http::{HeaderValue, Method},
 };
-use std::net::SocketAddr;
-use tower_http::cors::CorsLayer;
-use std::sync::Arc;
 use sqlx::PgPool;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use uuid::Uuid;
+
+use chat_dto::User;
 
 mod handlers;
 mod models;
-
-#[derive(Debug, Clone)]
-pub struct User {
-    pub id: Uuid,
-    pub name: String,
-    pub email: String,
-}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,6 +22,7 @@ pub struct AppState {
     model: String,
     pool: PgPool,
     self_user: User,
+    user_id: Uuid,
 }
 
 async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
@@ -44,11 +40,11 @@ async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     let user = sqlx::query_as!(
         User,
         r#"--sql
-        INSERT INTO users (id, name, email)
-        VALUES ($1, $2, 'self@localhost')
-        ON CONFLICT (id) DO UPDATE
-        SET name = $2
-        RETURNING id, name, email
+            INSERT INTO users (id, name, email)
+            VALUES ($1, $2, 'self@localhost')
+            ON CONFLICT (id) DO UPDATE
+            SET name = $2
+            RETURNING id, name, email
         "#,
         artilect_id,
         name,
@@ -67,14 +63,10 @@ async fn main() {
 
     // Load configuration
     dotenvy::dotenv().ok();
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    let infer_url = std::env::var("INFER_URL")
-        .unwrap_or_else(|_| "http://infer".to_string());
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "80".to_string());
-    let model = std::env::var("DEFAULT_MODEL")
-        .unwrap_or_else(|_| "default".to_string());
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let infer_url = std::env::var("INFER_URL").unwrap_or_else(|_| "http://infer".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "80".to_string());
+    let model = std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| "default".to_string());
 
     // Create database connection pool
     let pool = PgPool::connect(&database_url)
@@ -86,12 +78,16 @@ async fn main() {
         .await
         .expect("Failed to ensure Artilect user");
 
+    let user_id_str = std::env::var("USER_ID").expect("USER_ID must be set");
+    let user_id = Uuid::parse_str(&user_id_str).expect("USER_ID must be a valid UUID");
+
     // Create shared state
     let state = Arc::new(AppState {
         infer_url,
         model,
         pool,
         self_user,
+        user_id,
     });
 
     // Configure CORS
@@ -103,19 +99,17 @@ async fn main() {
     // Build router
     let app = Router::new()
         .route("/health", get(handlers::health_check))
-        .route("/chat", post(handlers::chat))
+        .route("/chat", post(handlers::chat_handler))
+        // .route("/chat/:thread_id", get(handlers::get_thread))
         .layer(cors)
         .with_state(state);
 
     // Start server
     let addr = SocketAddr::from(([0, 0, 0, 0], port.parse::<u16>().expect("Invalid PORT")));
     tracing::info!("Starting server on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(
-        listener,
-        app.into_make_service()
-    )
-    .await
-    .unwrap();
-} 
+    axum::serve(listener, app.into_make_service())
+        .await
+        .unwrap();
+}
