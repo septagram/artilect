@@ -1,43 +1,40 @@
 #![feature(let_chains)]
 
+use chat_dto::{Message, SendMessageRequest, SendMessageResponse, Thread};
+use dioxus::logger::tracing::{debug, error, info, trace, warn, Level};
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use futures_util::StreamExt;
-use dioxus::logger::tracing::{Level, trace, debug, info, warn, error};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
-use chat_dto::SendMessageResponse;
-
 static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
-#[derive(Debug, Clone, PartialEq)]
-pub struct UnsyncedMessage {
-    pub thread_id: Option<Uuid>, // Optional since it may be a new thread
-    pub content: String,
-}
+static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Message {
-    Synced(chat_dto::Message),
-    Unsynced(UnsyncedMessage),
-}
-
-async fn send_message(message: &str) -> Result<chat_dto::Message, Box<dyn Error>> {
+async fn send_message(
+    message: &Message,
+    is_new_thread: bool,
+) -> Result<chat_dto::SendMessageResponse, Box<dyn Error>> {
     let client = Client::new();
     match client
         .post(format!("{BASE_URL}/chat"))
-        .json(&json!({"message": message}))
+        .json(&SendMessageRequest {
+            message: message.clone(),
+            is_new_thread,
+        })
         .send()
         .await
     {
         Ok(res) => {
             if let Ok(response) = res.json::<SendMessageResponse>().await {
-                Ok(response.message)
+                Ok(response)
             } else {
                 Err("Failed to send message".into())
             }
-        },
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -71,27 +68,94 @@ fn App() -> Element {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct State {
+    pub user_id: Signal<Uuid>,
+    pub unsynced_ids: Signal<HashSet<Uuid>>,
+    pub messages: Signal<HashMap<Uuid, Message>>,
+    pub threads: Signal<HashMap<Uuid, Thread>>,
+    pub thread_id: Signal<Option<Uuid>>,
+    pub thread_message_ids: Signal<Vec<Uuid>>,
+}
+
 #[component]
 fn Home() -> Element {
+    let mut state = use_context_provider::<State>(|| State {
+        user_id: Signal::new(Uuid::parse_str(USER_ID_STR).expect("Failed to parse CHAT_USER_ID")),
+        unsynced_ids: Signal::new(HashSet::new()),
+        messages: Signal::new(HashMap::new()),
+        threads: Signal::new(HashMap::new()),
+        thread_id: Signal::new(None),
+        thread_message_ids: Signal::new(initial_messages().iter().map(|m| m.id).collect()),
+    });
     let mut input = use_signal(|| String::new());
-    let mut messages = use_signal(|| initial_messages());
-    info!("Test console, message count: {}", messages.len());
 
-    let handle_send = use_coroutine(move |mut rx: UnboundedReceiver<()> | async move {
+    let handle_send = use_coroutine(move |mut rx: UnboundedReceiver<()>| async move {
         while let Some(_) = rx.next().await {
-            let message = input.read().clone();
+            let current_thread_id = *state.thread_id.read();
+            let is_new_thread = current_thread_id.is_none();
+            let thread_id = current_thread_id.unwrap_or_else(|| {
+                let id = Uuid::new_v4();
+                state
+                    .threads
+                    .with_mut(|t| t.insert(id, Thread { id, name: None }));
+                state.unsynced_ids.with_mut(|ids| ids.insert(id));
+                state.thread_id.set(Some(id));
+                id
+            });
+            let message = Message {
+                id: Uuid::new_v4(),
+                thread_id: thread_id,
+                user_id: *state.user_id.read(),
+                content: input.read().clone(),
+                created_at: OffsetDateTime::now_utc(),
+                updated_at: None,
+            };
             input.set(String::new());
-            let mut messages_with_sent = messages.read().clone();
-            messages_with_sent.push(Message::Unsynced(UnsyncedMessage {
-                thread_id: None,
-                content: message.clone(),
-            }));
-            messages.set(messages_with_sent.clone());
-            match send_message(&message).await {
+            state.unsynced_ids.with_mut(|ids| {
+                ids.insert(message.id);
+            });
+            state.messages.with_mut(|m| {
+                m.insert(message.id, message.clone());
+            });
+            state
+                .thread_message_ids
+                .with_mut(|ids| ids.push(message.id));
+            match send_message(&message, is_new_thread).await {
                 Ok(response) => {
-                    messages_with_sent.push(Message::Synced(response));
-                    info!("Updated messages: {:?}", messages_with_sent);
-                    messages.set(messages_with_sent);
+                    let old_thread_id = state.thread_id.read().unwrap();
+                    let thread = response.threads.get(&old_thread_id);
+                    if let Some(thread) = thread {
+                        if thread.id != old_thread_id {
+                            state.threads.with_mut(|t| {
+                                t.remove(&old_thread_id);
+                            });
+                            state.thread_id.set(Some(thread.id));
+                        }
+                        state.threads.with_mut(|t| {
+                            t.insert(thread.id, thread.clone());
+                        });
+                    };
+                    state.messages.with_mut(|m| {
+                        for (message_id, message) in response.messages {
+                            if message.id != message_id {
+                                state.thread_message_ids.with_mut(|ids| {
+                                    for id in ids.iter_mut() {
+                                        if *id == message_id {
+                                            *id = message.id;
+                                            break;
+                                        }
+                                    }
+                                });
+                                m.remove(&message_id);
+                            } else {
+                                state.thread_message_ids.with_mut(|ids| {
+                                    ids.push(message.id);
+                                });
+                            }
+                            m.insert(message.id, message);
+                        }
+                    });
                 }
                 Err(error) => {
                     error!("Error sending message: {}", error);
@@ -109,10 +173,10 @@ fn Home() -> Element {
     rsx! {
         div { class: "chat",
             div { class: "chat__history",
-                for (index, msg) in messages.iter().enumerate() {
+                for message_id in state.thread_message_ids.read().clone() {
                     ChatMessage {
-                        key: "{index}",
-                        message: msg.clone()
+                        key: "{message_id}",
+                        message_id,
                     }
                 }
             }
@@ -137,27 +201,25 @@ fn Home() -> Element {
 }
 
 #[component]
-fn ChatMessage(message: Message) -> Element {
-    let class = match message {
-        Message::Unsynced(_) => "chat__message chat__message--user",
-        Message::Synced(ref m) => if m.user_id.is_nil() {
-            "chat__message chat__message--system"
-        } else {
-            "chat__message chat__message--user"
-        }
-    };
-
-    let content = match message {
-        Message::Unsynced(m) => m.content,
-        Message::Synced(m) => m.content
+fn ChatMessage(message_id: Uuid) -> Element {
+    let message = use_context::<State>()
+        .messages
+        .read()
+        .get(&message_id)
+        .cloned()
+        .expect("Message ID does not exist");
+    let is_user_message = message.user_id == *use_context::<State>().user_id.read();
+    let class = match is_user_message {
+        true => "chat__message chat__message--user",
+        false => "chat__message chat__message--system",
     };
 
     rsx! {
         div {
             class: "{class}",
-            p { 
+            p {
                 class: "chat__message-text",
-                "{content}"
+                "{message.content}"
             }
         }
     }

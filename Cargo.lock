@@ -534,6 +534,7 @@ name = "chat-dto"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sqlx",
  "time",
  "uuid",
 ]
@@ -551,6 +552,7 @@ dependencies = [
  "getrandom 0.2.15",
  "reqwest 0.12.12",
  "serde_json",
+ "time",
  "uuid",
 ]
 
@@ -5429,6 +5431,7 @@ checksum = "35e7868883861bd0e56d9ac6efcaaca0d6d5d82a2a7ec8209ff492c07cf37b21"
 dependencies = [
  "deranged",
  "itoa 1.0.14",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",

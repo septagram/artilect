@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chat-dto = { path = "../dto" }
+chat-dto = { path = "../dto", features = ["frontend"] }
 dioxus = { version = "0.6", features = ["router"] }
 dioxus-web = { version = "0.6" }
 reqwest = { version = "0.12", features = ["json"] }
@@ -17,6 +17,7 @@ dioxus-logger = "0.6"
 dotenvy_macro = "0.15"
 getrandom = { version = "0.2", features = ["js"] }
 uuid = { version = "1.0", features = ["v4", "serde", "js"] }
+time = { version = "0.3", features = ["wasm-bindgen"] }
 
 [features]
 default = ["web"]

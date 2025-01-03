@@ -1,10 +1,11 @@
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{extract::State, response::IntoResponse, Json, http::StatusCode};
 use serde_json::{json, Value};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use chat_dto::{Message, SendMessageRequest, SendMessageResponse};
+use chat_dto::{Thread, Message, SendMessageRequest, SendMessageResponse};
 
 use crate::{
     models::{OpenAIMessage, OpenAIRequest},
@@ -19,19 +20,19 @@ async fn create_thread(
     pool: &PgPool,
     user_id: Uuid,
     self_user_id: Uuid,
-) -> Result<Uuid, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = pool.begin().await?;
 
     // Create the thread
-    let thread_id = sqlx::query!(
+    let thread = sqlx::query_as!(
+        Thread,
         r#"--sql
         INSERT INTO threads DEFAULT VALUES
-        RETURNING id
+        RETURNING id, name
         "#
     )
     .fetch_one(&mut *tx)
-    .await?
-    .id;
+    .await?;
 
     // Add both users as participants
     sqlx::query!(
@@ -39,7 +40,7 @@ async fn create_thread(
         INSERT INTO thread_participants (thread_id, user_id)
         VALUES ($1, $2), ($1, $3)
         "#,
-        thread_id,
+        thread.id,
         user_id,
         self_user_id
     )
@@ -47,7 +48,7 @@ async fn create_thread(
     .await?;
 
     tx.commit().await?;
-    Ok(thread_id)
+    Ok(thread)
 }
 
 // async fn save_message<'e, E>(executor: &mut E, user_id: Uuid, thread_id: Uuid, message: &str) -> Result<(), Box<dyn std::error::Error>>
@@ -59,7 +60,7 @@ async fn create_message(
     user_id: Uuid,
     thread_id: Uuid,
     message: &str,
-) -> Result<(Uuid, time::OffsetDateTime), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = pool.begin().await?;
     let is_participant = sqlx::query!(
         r#"--sql
@@ -81,11 +82,12 @@ async fn create_message(
         )));
     }
 
-    let record = sqlx::query!(
+    let message = sqlx::query_as!(
+        Message,
         r#"--sql
         INSERT INTO messages (user_id, thread_id, content)
         VALUES ($1, $2, $3)
-        RETURNING id, created_at
+        RETURNING id, thread_id, user_id, content, created_at, updated_at
         "#,
         user_id,
         thread_id,
@@ -95,7 +97,7 @@ async fn create_message(
     .await?;
 
     tx.commit().await?;
-    Ok((record.id, record.created_at))
+    Ok(message)
 }
 
 async fn respond_to_thread(
@@ -166,18 +168,7 @@ async fn respond_to_thread(
         && let Some(message) = first_choice.get("message")
     {
         let content = message.get("content").and_then(Value::as_str).unwrap_or("");
-        let (id, created_at) =
-            create_message(&state.pool, state.self_user.id, thread_id, &content).await?;
-
-        // Create and return Message struct
-        let message = Message {
-            id,
-            thread_id,
-            user_id: state.self_user.id,
-            content: content.to_string(),
-            created_at,
-            updated_at: None,
-        };
+        let message = create_message(&state.pool, state.self_user.id, thread_id, &content).await?;
         Ok(message)
     } else {
         Err("Invalid response format".into())
@@ -187,21 +178,42 @@ async fn respond_to_thread(
 async fn chat(
     state: &AppState,
     request: &SendMessageRequest,
-) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
-    let thread_id = match request.thread_id {
-        Some(thread_id) => thread_id,
-        None => create_thread(&state.pool, state.user_id, state.self_user.id).await?,
+) -> Result<SendMessageResponse, Box<dyn std::error::Error + Send + Sync>> {
+    let request_thread_id = request.message.thread_id;
+    let thread: Option<Thread> = match request.is_new_thread {
+        true => Some(create_thread(&state.pool, state.user_id, state.self_user.id).await?),
+        false => None,
     };
-    create_message(&state.pool, state.user_id, thread_id, &request.message).await?;
-    respond_to_thread(&state, thread_id).await
+    let thread_id = match &thread {
+        Some(thread) => thread.id,
+        None => request_thread_id,
+    };
+    let request_message_id = request.message.id;
+    let user_message = create_message(
+        &state.pool,
+        state.user_id,
+        thread_id,
+        &request.message.content,
+    )
+    .await?;
+    let ai_message = respond_to_thread(&state, thread_id).await?;
+    let mut threads = HashMap::new();
+    if let Some(thread) = thread {
+        threads.insert(request_thread_id, thread);
+    }
+    let messages = HashMap::from([(request_message_id, user_message), (ai_message.id, ai_message)]);
+    Ok(SendMessageResponse {
+        threads,
+        messages,
+    })
 }
 
 pub async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SendMessageRequest>,
-) -> Json<Value> {
+) -> Result<Json<SendMessageResponse>, StatusCode> {
     match chat(&state, &request).await {
-        Ok(message) => Json(json!(SendMessageResponse { message })),
-        Err(e) => Json(json!({"error": e.to_string()})),
+        Ok(response) => Ok(Json(response)),
+        Err(e) =>  Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }

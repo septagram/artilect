@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -10,6 +11,7 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
 pub struct Thread {
     pub id: Uuid,
     pub name: Option<String>,
@@ -17,16 +19,19 @@ pub struct Thread {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageRequest {
-    pub thread_id: Option<Uuid>,
-    pub message: String,
+    pub message: Message,
+    pub is_new_thread: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageResponse {
-    pub message: Message,
+    pub threads: HashMap<Uuid, Thread>,
+    pub messages: HashMap<Uuid, Message>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "frontend", derive(PartialEq))]
+#[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
 pub struct Message {
     pub id: Uuid,
     pub thread_id: Uuid,
