@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use chat_dto::{Message, SendMessageRequest};
+use chat_dto::{Message, SendMessageRequest, SendMessageResponse};
 
 use crate::{
     models::{OpenAIMessage, OpenAIRequest},
@@ -148,14 +148,14 @@ async fn respond_to_thread(
     {
         let content = message.get("content").and_then(Value::as_str).unwrap_or("");
         let (id, created_at) =
-            create_message(&state.pool, state.user_id, thread_id, &content)
+            create_message(&state.pool, state.self_user.id, thread_id, &content)
                 .await?;
 
         // Create and return Message struct
         let message = Message {
             id,
             thread_id,
-            user_id: state.user_id,
+            user_id: state.self_user.id,
             content: content.to_string(),
             created_at,
             updated_at: None,
@@ -180,7 +180,7 @@ pub async fn chat_handler(
     Json(request): Json<SendMessageRequest>,
 ) -> Json<Value> {
     match chat(&state, &request).await {
-        Ok(message) => Json(json!({"message": message})),
+        Ok(message) => Json(json!(SendMessageResponse { message })),
         Err(e) => Json(json!({"error": e.to_string()})),
     }
 }

@@ -6,11 +6,25 @@ use serde_json::{json, Value};
 use std::error::Error;
 use futures_util::StreamExt;
 use dioxus::logger::tracing::{Level, trace, debug, info, warn, error};
+use uuid::Uuid;
+
+use chat_dto::SendMessageResponse;
 
 static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnsyncedMessage {
+    pub thread_id: Option<Uuid>, // Optional since it may be a new thread
+    pub content: String,
+}
 
-async fn send_message(message: &str) -> Result<String, Box<dyn Error>> {
-    let client = reqwest::Client::new();
+#[derive(Debug, Clone, PartialEq)]
+pub enum Message {
+    Synced(chat_dto::Message),
+    Unsynced(UnsyncedMessage),
+}
+
+async fn send_message(message: &str) -> Result<chat_dto::Message, Box<dyn Error>> {
+    let client = Client::new();
     match client
         .post(format!("{BASE_URL}/chat"))
         .json(&json!({"message": message}))
@@ -18,11 +32,8 @@ async fn send_message(message: &str) -> Result<String, Box<dyn Error>> {
         .await
     {
         Ok(res) => {
-            if let Ok(json) = res.json::<Value>().await
-                && json.get("role").and_then(Value::as_str) == Some("assistant")
-                && let Some(content) = json.get("content").and_then(Value::as_str)
-            {
-                Ok(String::from(content))
+            if let Ok(response) = res.json::<SendMessageResponse>().await {
+                Ok(response.message)
             } else {
                 Err("Failed to send message".into())
             }
@@ -60,12 +71,6 @@ fn App() -> Element {
     }
 }
 
-#[derive(Clone, Debug)]
-struct Message {
-    text: String,
-    is_user: bool,
-}
-
 #[component]
 fn Home() -> Element {
     let mut input = use_signal(|| String::new());
@@ -77,17 +82,14 @@ fn Home() -> Element {
             let message = input.read().clone();
             input.set(String::new());
             let mut messages_with_sent = messages.read().clone();
-            messages_with_sent.push(Message {
-                text: message.clone(),
-                is_user: true,
-            });
+            messages_with_sent.push(Message::Unsynced(UnsyncedMessage {
+                thread_id: None,
+                content: message.clone(),
+            }));
             messages.set(messages_with_sent.clone());
             match send_message(&message).await {
                 Ok(response) => {
-                    messages_with_sent.push(Message {
-                        text: response,
-                        is_user: false,
-                    });
+                    messages_with_sent.push(Message::Synced(response));
                     info!("Updated messages: {:?}", messages_with_sent);
                     messages.set(messages_with_sent);
                 }
@@ -104,15 +106,13 @@ fn Home() -> Element {
             handle_send.send(());
         }
     };
-
     rsx! {
         div { class: "chat",
             div { class: "chat__history",
                 for (index, msg) in messages.iter().enumerate() {
-                    div {
+                    ChatMessage {
                         key: "{index}",
-                        class: if msg.is_user { "chat__message chat__message--user" } else { "chat__message chat__message--system" },
-                        p { class: "chat__message-text", "{msg.text}" }
+                        message: msg.clone()
                     }
                 }
             }
@@ -133,6 +133,33 @@ fn Home() -> Element {
             }
         }
         style { {include_str!("style.css")} }
+    }
+}
+
+#[component]
+fn ChatMessage(message: Message) -> Element {
+    let class = match message {
+        Message::Unsynced(_) => "chat__message chat__message--user",
+        Message::Synced(ref m) => if m.user_id.is_nil() {
+            "chat__message chat__message--system"
+        } else {
+            "chat__message chat__message--user"
+        }
+    };
+
+    let content = match message {
+        Message::Unsynced(m) => m.content,
+        Message::Synced(m) => m.content
+    };
+
+    rsx! {
+        div {
+            class: "{class}",
+            p { 
+                class: "chat__message-text",
+                "{content}"
+            }
+        }
     }
 }
 

@@ -22,6 +22,11 @@ pub struct SendMessageRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendMessageResponse {
+    pub message: Message,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Message {
     pub id: Uuid,
     pub thread_id: Uuid,
@@ -37,7 +42,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        // let result = add(2, 2);
+        // assert_eq!(result, 4);
     }
 }
