@@ -3,6 +3,7 @@ members = [
     "actuators/chat/back",
     "actuators/chat/front",
     "actuators/chat/dto",
+    "actuators/chat/macros",
     # "infer",
 ]
 resolver = "2"
