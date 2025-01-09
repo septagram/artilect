@@ -1,7 +1,17 @@
+use dioxus::prelude::*;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use chat_dto::{SyncUpdate, Identifiable};
+use chat_dto::{Identifiable, Message, SyncUpdate, Thread};
+
+#[derive(Debug, Clone, Copy)]
+pub struct State {
+    pub user_id: Signal<Uuid>,
+    pub messages: Signal<HashMap<Uuid, SyncState<Message>>>,
+    pub threads: Signal<HashMap<Uuid, SyncState<Thread>>>,
+    pub thread_id: Signal<Option<Uuid>>,
+    pub thread_message_ids: Signal<HashMap<Uuid, Vec<Uuid>>>,
+}
 
 #[derive(Debug)]
 pub struct SyncError {
@@ -23,7 +33,7 @@ impl SyncError {
         }
     }
 
-    pub fn with_cause<S, E>(message: S, cause: E) -> Self 
+    pub fn with_cause<S, E>(message: S, cause: E) -> Self
     where
         S: Into<String>,
         E: std::error::Error + Send + Sync + 'static,
@@ -62,7 +72,7 @@ impl<T: Identifiable> SyncState<T> {
 
 pub fn consume_sync_update_batch<T: Identifiable>(
     map: &mut HashMap<Uuid, SyncState<T>>,
-    updates: Option<Vec<SyncUpdate<T>>>
+    updates: Option<Vec<SyncUpdate<T>>>,
 ) {
     if let Some(updates) = updates {
         for update in updates {
