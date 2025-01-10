@@ -48,6 +48,9 @@ pub struct User {
 pub struct Thread {
     pub id: Uuid,
     pub name: Option<String>,
+    pub owner_id: Uuid,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug)]

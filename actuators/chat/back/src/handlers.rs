@@ -31,7 +31,7 @@ async fn create_thread(
         r#"--sql
         INSERT INTO threads (id, name)
         VALUES ($1, NULL)
-        RETURNING id, name
+        RETURNING id, name, owner_id, created_at, updated_at
         "#,
         thread_id
     )
@@ -65,7 +65,7 @@ async fn create_message(
     thread_id: Uuid,
     message_id: Option<Uuid>,
     message: &str,
-) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = pool.begin().await?;
     let is_participant = sqlx::query!(
         r#"--sql
@@ -102,8 +102,20 @@ async fn create_message(
     .fetch_one(&mut *tx)
     .await?;
 
+    let thread = sqlx::query_as!(
+        Thread,
+        r#"--sql
+        UPDATE threads SET updated_at = $1 WHERE id = $2
+        RETURNING id, name, owner_id, created_at, updated_at
+        "#,
+        message.created_at,
+        thread_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     tx.commit().await?;
-    Ok(message)
+    Ok((message, thread))
 }
 
 async fn get_thread_message_ids(
@@ -124,7 +136,7 @@ async fn get_thread_message_ids(
 async fn respond_to_thread(
     state: &AppState,
     thread_id: Uuid,
-) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
     #[derive(sqlx::FromRow)]
     struct MessageForAI {
         user_id: Uuid,
@@ -189,9 +201,9 @@ async fn respond_to_thread(
         && let Some(message) = first_choice.get("message")
     {
         let content = message.get("content").and_then(Value::as_str).unwrap_or("");
-        let message =
+        let (message, thread) =
             create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
-        Ok(message)
+        Ok((message, thread))
     } else {
         Err("Invalid response format".into())
     }
@@ -201,16 +213,11 @@ async fn chat(
     state: &AppState,
     request: &SendMessageRequest,
 ) -> Result<SendMessageResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let request_thread_id = request.message.thread_id;
-    let thread: Option<Thread> = match request.is_new_thread {
-        true => Some(create_thread(&state.pool, state.user_id, request_thread_id).await?),
-        false => None,
-    };
-    let thread_id = match &thread {
-        Some(thread) => thread.id,
-        None => request_thread_id,
-    };
-    let user_message = create_message(
+    let thread_id = request.message.thread_id;
+    if request.is_new_thread {
+        create_thread(&state.pool, state.user_id, thread_id).await?;
+    }
+    let (user_message, _) = create_message(
         &state.pool,
         state.user_id,
         thread_id,
@@ -218,11 +225,8 @@ async fn chat(
         &request.message.content,
     )
     .await?;
-    let ai_message = respond_to_thread(&state, thread_id).await?;
-    let mut threads = Vec::new();
-    if let Some(thread) = thread {
-        threads.push(SyncUpdate::Updated(thread));
-    }
+    let (ai_message, thread) = respond_to_thread(&state, thread_id).await?;
+    let threads = vec![SyncUpdate::Updated(thread)];
     let thread_messages = OneToManyUpdate {
         owner_id: thread_id,
         children: get_thread_message_ids(&state.pool, thread_id)
