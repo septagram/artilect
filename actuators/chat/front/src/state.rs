@@ -2,7 +2,10 @@ use dioxus::prelude::*;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+pub mod actions;
 use chat_dto::{Identifiable, Message, SyncUpdate, Thread};
+
+static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
 
 #[derive(Debug, Clone, Copy)]
 pub struct State {
@@ -11,6 +14,16 @@ pub struct State {
     pub threads: Signal<HashMap<Uuid, SyncState<Thread>>>,
     pub thread_id: Signal<Option<Uuid>>,
     pub thread_message_ids: Signal<HashMap<Uuid, Vec<Uuid>>>,
+}
+
+pub fn use_app_state() -> State {
+    use_context_provider::<State>(|| State {
+        user_id: Signal::new(Uuid::parse_str(USER_ID_STR).expect("Failed to parse CHAT_USER_ID")),
+        messages: Signal::new(HashMap::new()),
+        threads: Signal::new(HashMap::new()),
+        thread_id: Signal::new(None),
+        thread_message_ids: Signal::new(HashMap::new()),
+    })
 }
 
 #[derive(Debug)]
@@ -65,8 +78,32 @@ pub enum SyncState<T: Identifiable> {
 }
 
 impl<T: Identifiable> SyncState<T> {
+    pub fn error_text(&self) -> Option<String> {
+        match self {
+            SyncState::Synced(_) | SyncState::Deleted => None,
+            SyncState::Loading(error)
+            | SyncState::Reloading(error, _)
+            | SyncState::Saving(error, _)
+            | SyncState::Deleting(error, _) => error.as_ref().map(|e| e.to_string()),
+        }
+    }
+
     pub fn is_synced(&self) -> bool {
         matches!(self, SyncState::Synced(_) | SyncState::Deleted)
+    }
+
+    pub fn is_syncing(&self) -> bool {
+        !self.is_synced()
+    }
+
+    pub fn read(&self) -> Option<&T> {
+        match self {
+            SyncState::Deleted | SyncState::Loading(_) => None,
+            SyncState::Synced(entity)
+            | SyncState::Reloading(_, entity)
+            | SyncState::Saving(_, entity)
+            | SyncState::Deleting(_, entity) => Some(entity),
+        }
     }
 }
 

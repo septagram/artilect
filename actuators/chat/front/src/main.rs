@@ -2,20 +2,21 @@
 
 use dioxus::logger::tracing::Level;
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 mod api;
 mod components;
 mod state;
-use components::{Chat, Style};
+use components::{Chat, Layout, NewChat, Style};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    #[layout(Navbar)]
+    #[layout(Layout)]
     #[route("/")]
-    Chat {},
-    // #[route("/blog/:id")]
-    // Blog { id: i32 },
+    NewChat {},
+    #[route("/chat/:thread_id")]
+    Chat { thread_id: Uuid },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -27,6 +28,8 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    state::use_app_state();
+    state::actions::use_app_actions();
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         Style {}
@@ -41,13 +44,9 @@ fn Navbar() -> Element {
         div {
             id: "navbar",
             Link {
-                to: Route::Chat {},
-                "Chat"
+                to: Route::NewChat {},
+                "New Chat"
             }
-            // Link {
-            //     to: Route::Blog { id: 1 },
-            //     "Blog"
-            // }
         }
 
         Outlet::<Route> {}
