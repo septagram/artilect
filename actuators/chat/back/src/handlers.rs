@@ -1,7 +1,8 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use serde_json::{json, Value};
+use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
+use time::{self, format_description};
 use uuid::Uuid;
 
 use chat_dto::{
@@ -10,9 +11,12 @@ use chat_dto::{
 };
 
 use crate::{
-    models::{OpenAIMessage, OpenAIRequest},
-    AppState,
+    openai::{send_openai_request, OpenAIMessage},
+    state::AppState,
 };
+
+const DATE_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
+    sign:mandatory]:[offset_minute]";
 
 pub async fn health_check() -> impl IntoResponse {
     Json(json!({"status": "ok"}))
@@ -29,11 +33,12 @@ async fn create_thread(
     let thread = sqlx::query_as!(
         Thread,
         r#"--sql
-        INSERT INTO threads (id, name)
-        VALUES ($1, NULL)
+        INSERT INTO threads (id, name, owner_id)
+        VALUES ($1, NULL, $2)
         RETURNING id, name, owner_id, created_at, updated_at
         "#,
-        thread_id
+        thread_id,
+        user_id
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -118,6 +123,13 @@ async fn create_message(
     Ok((message, thread))
 }
 
+async fn generate_thread_name(
+    pool: &PgPool,
+    thread_id: Uuid,
+) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
+    todo!()
+}
+
 async fn get_thread_message_ids(
     pool: &PgPool,
     thread_id: Uuid,
@@ -144,12 +156,6 @@ async fn respond_to_thread(
         created_at: time::OffsetDateTime,
     }
 
-    let date_format = time::format_description::parse(
-        "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-         sign:mandatory]:[offset_minute]",
-    )
-    .expect("Failed to parse date format");
-
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
     let messages = sqlx::query_as!(
@@ -167,46 +173,26 @@ async fn respond_to_thread(
     .into_iter()
     .map(|msg| OpenAIMessage {
         role: if msg.user_id == Uuid::nil() {
-            "assistant"
+            "assistant".to_string()
         } else {
-            "user"
-        }
-        .to_string(),
+            "user".to_string()
+        },
         content: format!(
             "[{}] {}",
             msg.created_at
                 .to_offset(timezone)
-                .format(&date_format)
+                .format(&format_description::well_known::Rfc3339)
                 .expect("Failed to format date"),
             msg.content
         ),
     })
     .collect::<Vec<_>>();
 
-    let openai_request = OpenAIRequest {
-        model: state.model.clone(),
-        messages: messages,
-    };
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("{}/v1/chat/completions", state.infer_url))
-        .json(&openai_request)
-        .send()
-        .await?;
-
-    let json = response.json::<Value>().await?;
-    if let Some(choices) = json.get("choices")
-        && let Some(first_choice) = choices.as_array().and_then(|c| c.first())
-        && let Some(message) = first_choice.get("message")
-    {
-        let content = message.get("content").and_then(Value::as_str).unwrap_or("");
-        let (message, thread) =
-            create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
-        Ok((message, thread))
-    } else {
-        Err("Invalid response format".into())
-    }
+    let content =
+        send_openai_request(messages, state.model.clone(), state.infer_url.clone()).await?;
+    let (message, thread) =
+        create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
+    Ok((message, thread))
 }
 
 async fn chat(
@@ -258,6 +244,6 @@ pub async fn chat_handler(
         Err(e) => {
             eprintln!("Error in chat handler: {:#?}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
-        },
+        }
     }
 }

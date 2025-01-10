@@ -34,7 +34,7 @@
         {
             "label": "db migrate",
             "type": "shell",
-            "command": "export $(envsubst < .env | xargs) && refinery migrate -e DATABASE_URL -p migrations/",
+            "command": "./migrate.sh",
             "options": {
                 "cwd": "${workspaceFolder}/db"
             },

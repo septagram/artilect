@@ -8,7 +8,7 @@ use super::{consume_sync_update_batch, State, SyncState};
 use crate::api;
 use chat_dto::{Message, OneToManyChild, Thread};
 
-fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T> 
+fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T>
 where
     F: Future<Output = ()> + 'static,
 {
@@ -30,18 +30,32 @@ async fn handle_send_message(mut state: State, content: SendMessageAction) {
     let is_new_thread = current_thread_id.is_none();
     let thread_id = current_thread_id.unwrap_or_else(|| {
         let id = Uuid::new_v4();
-        state
-            .threads
-            .with_mut(|t| t.insert(id, SyncState::Saving(None, Thread { id, name: None })));
+        let now = OffsetDateTime::now_utc();
+        state.threads.with_mut(|t| {
+            t.insert(
+                id,
+                SyncState::Saving(
+                    None,
+                    Thread {
+                        id,
+                        name: None,
+                        owner_id: *state.user_id.read(),
+                        created_at: now,
+                        updated_at: now,
+                    },
+                ),
+            )
+        });
         state.thread_id.set(Some(id));
         id
     });
+    let now = OffsetDateTime::now_utc();
     let message = Message {
         id: Uuid::new_v4(),
-        thread_id: thread_id,
+        thread_id,
         user_id: *state.user_id.read(),
-        content: content,
-        created_at: OffsetDateTime::now_utc(),
+        content,
+        created_at: now,
         updated_at: None,
     };
     state.messages.with_mut(|m| {

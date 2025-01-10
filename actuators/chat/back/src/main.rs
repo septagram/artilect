@@ -15,15 +15,10 @@ use chat_dto::User;
 
 mod handlers;
 mod models;
+mod openai;
+mod state;
 
-#[derive(Clone)]
-pub struct AppState {
-    infer_url: String,
-    model: String,
-    pool: PgPool,
-    self_user: User,
-    user_id: Uuid,
-}
+use state::AppState;
 
 async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     let name = std::env::var("NAME")
