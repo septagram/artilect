@@ -14,7 +14,6 @@ use uuid::Uuid;
 use chat_dto::User;
 
 mod handlers;
-mod models;
 mod openai;
 mod state;
 
@@ -55,6 +54,9 @@ async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
 async fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
+
+    let prompt = infer_lib::render_prompt(infer_lib::SystemPrompt);
+    println!("{}", prompt);
 
     // Load configuration
     dotenvy::dotenv().ok();

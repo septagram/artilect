@@ -1,0 +1,12 @@
+[package]
+name = "infer-lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dioxus = { version = "0.6", features = ["macro"] }
+dioxus-ssr = "0.6"
+dioxus-html = "0.6"
+dioxus-core = "0.6"
+dioxus-core-macro = "0.6"
+dioxus-html-internal-macro = "0.6.1"
