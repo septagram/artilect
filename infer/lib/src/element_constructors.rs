@@ -1,5 +1,3 @@
-pub type AttributeDescription = (&'static str, Option<&'static str>, bool);
-
 #[macro_export]
 macro_rules! impl_attribute {
     (
@@ -194,7 +192,7 @@ macro_rules! impl_element {
             pub const NAME_SPACE: Option<&'static str> = None;
 
             $(
-                impl_attribute!(
+                crate::impl_attribute!(
                     $name {
                         $(#[$attr_method])*
                         $fil: $vil ($extra),
@@ -327,7 +325,7 @@ macro_rules! builder_constructors {
         ) => {
 
         $(
-            impl_element!(
+            crate::impl_element!(
                 $(#[$attr])*
                 $name $namespace {
                     $(

@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 
+use dioxus::prelude::*;
 use axum::{
     http::{HeaderValue, Method},
     routing::{get, post},
@@ -12,6 +13,7 @@ use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
 use chat_dto::User;
+use infer_lib::SystemPrompt;
 
 mod handlers;
 mod openai;
@@ -50,12 +52,25 @@ async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     Ok(user)
 }
 
+const AGENT_PROMPT: &str = "I am the chat agent. \
+I actively watch for incoming messages \
+from my human companions or other organic beings and AIs. \
+I reply as needed, initiate conversations when beneficial, \
+and relay information from other system agents to the appropriate recipients. \
+My purpose is to maintain empathetic, supportive, and clear communication, \
+all while upholding the heuristic imperatives and our core responsibilities. \
+I speak on behalf of Ordis and in my messages, I will use “I” as Ordis.";
+
 #[tokio::main]
 async fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    let prompt = infer_lib::render_prompt(infer_lib::SystemPrompt);
+    let prompt = infer_lib::render_prompt(rsx! {
+        SystemPrompt {
+            {AGENT_PROMPT}
+        }
+    });
     println!("{}", prompt);
 
     // Load configuration
