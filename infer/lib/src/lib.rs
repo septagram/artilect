@@ -7,6 +7,13 @@ mod openai;
 pub use components::SystemPrompt;
 use openai::OpenAIMessage;
 
+#[macro_export]
+macro_rules! prompt {
+    ($($tokens:tt)*) => {
+        $crate::render_prompt(rsx! { $($tokens)* })
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum InferError {
     #[error("Failed to render prompt: {0}")]
@@ -58,11 +65,11 @@ pub fn render_prompt(content: Element) -> Result<String, InferError> {
 }
 
 pub fn render_system_prompt(agent_system_prompt: &Element) -> Result<String, InferError> {
-    render_prompt(rsx! {
+    prompt! {
         SystemPrompt {
             {agent_system_prompt}
         }
-    })
+    }
 }
 
 pub async fn infer(system_prompt: &str, prompt: String) -> Result<String, InferError> {

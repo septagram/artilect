@@ -1,5 +1,6 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use dioxus::prelude::*;
+use infer_lib::prompt;
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -176,14 +177,14 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let content = infer_lib::infer(&state.system_prompt, infer_lib::render_prompt(rsx!{
+    let content = infer_lib::infer(&state.system_prompt, prompt!{
         MessageLog {
             messages
         }
         instructions {
             "Write a response to the user's message. Respond with just the content, no quotes or extra text."
         }
-    })?).await?;
+    }?).await?;
 
     let (message, thread) =
         create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
