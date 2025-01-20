@@ -2,7 +2,6 @@ use dioxus::prelude::*;
 
 #[allow(non_snake_case, non_upper_case_globals)]
 pub mod dioxus_elements {
-    // pub use dioxus::html::elements::*; // TODO: remove this
     use super::*;
 
     crate::builder_constructors! {

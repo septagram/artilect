@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::InferError;
 #[derive(Debug, Serialize)]
 pub struct OpenAIRequest {
     pub model: String,
@@ -26,7 +27,7 @@ pub async fn send_openai_request(
     messages: Vec<OpenAIMessage>,
     model: String,
     infer_url: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<String, InferError> {
     let openai_request = OpenAIRequest {
         model,
         messages,

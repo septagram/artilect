@@ -1,11 +1,11 @@
 #![feature(let_chains)]
 
-use dioxus::prelude::*;
 use axum::{
     http::{HeaderValue, Method},
     routing::{get, post},
     Router,
 };
+use dioxus::prelude::*;
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,13 +13,21 @@ use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
 use chat_dto::User;
-use infer_lib::SystemPrompt;
 
+mod components;
 mod handlers;
-mod openai;
 mod state;
 
 use state::AppState;
+
+const AGENT_PROMPT_TEXT: &str = "I am the chat agent. \
+I actively watch for incoming messages \
+from my human companions or other organic beings and AIs. \
+I reply as needed, initiate conversations when beneficial, \
+and relay information from other system agents to the appropriate recipients. \
+My purpose is to maintain empathetic, supportive, and clear communication, \
+all while upholding the heuristic imperatives and our core responsibilities. \
+I speak on behalf of Ordis and in my messages, I will use “I” as Ordis.";
 
 async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     let name = std::env::var("NAME")
@@ -52,33 +60,15 @@ async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     Ok(user)
 }
 
-const AGENT_PROMPT: &str = "I am the chat agent. \
-I actively watch for incoming messages \
-from my human companions or other organic beings and AIs. \
-I reply as needed, initiate conversations when beneficial, \
-and relay information from other system agents to the appropriate recipients. \
-My purpose is to maintain empathetic, supportive, and clear communication, \
-all while upholding the heuristic imperatives and our core responsibilities. \
-I speak on behalf of Ordis and in my messages, I will use “I” as Ordis.";
-
 #[tokio::main]
 async fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    let prompt = infer_lib::render_prompt(rsx! {
-        SystemPrompt {
-            {AGENT_PROMPT}
-        }
-    });
-    println!("{}", prompt);
-
     // Load configuration
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let infer_url = std::env::var("INFER_URL").unwrap_or_else(|_| "http://infer".to_string());
     let port = std::env::var("PORT").unwrap_or_else(|_| "80".to_string());
-    let model = std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| "default".to_string());
 
     // Create database connection pool
     let pool = PgPool::connect(&database_url)
@@ -92,14 +82,15 @@ async fn main() {
 
     let user_id_str = std::env::var("USER_ID").expect("USER_ID must be set");
     let user_id = Uuid::parse_str(&user_id_str).expect("USER_ID must be a valid UUID");
+    let system_prompt = infer_lib::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
+        .expect("Failed to render system prompt");
 
     // Create shared state
     let state = Arc::new(AppState {
-        infer_url,
-        model,
         pool,
         self_user,
         user_id,
+        system_prompt,
     });
 
     // Configure CORS

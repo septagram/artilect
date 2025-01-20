@@ -1,3 +1,5 @@
+pub type AttributeDescription = (&'static str, Option<&'static str>, bool);
+
 #[macro_export]
 macro_rules! impl_attribute {
     (
@@ -26,7 +28,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: AttributeDescription = (stringify!($fil), None, false);
+        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), None, false);
     };
 
     (
@@ -55,7 +57,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: AttributeDescription = ($name, None, false);
+        pub const $fil: $crate::element_constructors::AttributeDescription = ($name, None, false);
     };
 
     (
@@ -84,7 +86,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: AttributeDescription = (stringify!($fil), None, true);
+        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), None, true);
     };
 
     (
@@ -113,7 +115,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: AttributeDescription = (stringify!($fil), Some($ns), false)
+        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), false)
     };
 
     (
@@ -142,7 +144,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: AttributeDescription = (stringify!($fil), Some($ns), true)
+        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), true)
     };
 }
 
@@ -192,7 +194,7 @@ macro_rules! impl_element {
             pub const NAME_SPACE: Option<&'static str> = None;
 
             $(
-                crate::impl_attribute!(
+                $crate::impl_attribute!(
                     $name {
                         $(#[$attr_method])*
                         $fil: $vil ($extra),
@@ -325,7 +327,7 @@ macro_rules! builder_constructors {
         ) => {
 
         $(
-            crate::impl_element!(
+            $crate::impl_element!(
                 $(#[$attr])*
                 $name $namespace {
                     $(

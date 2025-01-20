@@ -1,8 +1,8 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use dioxus::prelude::*;
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
-use time::{self, format_description};
 use uuid::Uuid;
 
 use chat_dto::{
@@ -10,10 +10,21 @@ use chat_dto::{
     Thread,
 };
 
-use crate::{
-    openai::{send_openai_request, OpenAIMessage},
-    state::AppState,
-};
+use crate::{components::message_log::MessageLogItem, components::MessageLog, state::AppState};
+
+#[allow(non_snake_case, non_upper_case_globals)]
+pub mod dioxus_elements {
+    // pub use dioxus::html::elements::*; // TODO: remove this
+    use super::*;
+
+    infer_lib::builder_constructors! {
+        instructions None {};
+    }
+
+    pub mod elements {
+        pub use super::*;
+    }
+}
 
 const DATE_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
     sign:mandatory]:[offset_minute]";
@@ -149,47 +160,31 @@ async fn respond_to_thread(
     state: &AppState,
     thread_id: Uuid,
 ) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
-    #[derive(sqlx::FromRow)]
-    struct MessageForAI {
-        user_id: Uuid,
-        content: String,
-        created_at: time::OffsetDateTime,
-    }
-
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
     let messages = sqlx::query_as!(
-        MessageForAI,
+        MessageLogItem,
         r#"--sql
-            SELECT user_id, content, created_at
-            FROM messages 
-            WHERE thread_id = $1 
-            ORDER BY created_at ASC
+            SELECT users.name AS user_name, messages.content, messages.created_at
+            FROM messages
+            JOIN users ON messages.user_id = users.id
+            WHERE messages.thread_id = $1 
+            ORDER BY messages.created_at DESC
         "#,
         thread_id
     )
     .fetch_all(&state.pool)
-    .await?
-    .into_iter()
-    .map(|msg| OpenAIMessage {
-        role: if msg.user_id == Uuid::nil() {
-            "assistant".to_string()
-        } else {
-            "user".to_string()
-        },
-        content: format!(
-            "[{}] {}",
-            msg.created_at
-                .to_offset(timezone)
-                .format(&format_description::well_known::Rfc3339)
-                .expect("Failed to format date"),
-            msg.content
-        ),
-    })
-    .collect::<Vec<_>>();
+    .await?;
 
-    let content =
-        send_openai_request(messages, state.model.clone(), state.infer_url.clone()).await?;
+    let content = infer_lib::infer(&state.system_prompt, infer_lib::render_prompt(rsx!{
+        MessageLog {
+            messages
+        }
+        instructions {
+            "Write a response to the user's message. Respond with just the content, no quotes or extra text."
+        }
+    })?).await?;
+
     let (message, thread) =
         create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
     Ok((message, thread))

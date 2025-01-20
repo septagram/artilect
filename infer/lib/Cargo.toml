@@ -9,5 +9,9 @@ dioxus-ssr = "0.6"
 dioxus-html = "0.6"
 dioxus-core = "0.6"
 dioxus-core-macro = "0.6"
-dioxus-html-internal-macro = "0.6.1"
+dioxus-html-internal-macro = "0.6"
 xmltree = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+thiserror = "2.0"

@@ -8,6 +8,7 @@ chat-dto = { path = "../dto", features = ["backend"] }
 infer-lib = { path = "../../../infer/lib" }
 
 dioxus = { version = "0.6", features = ["macro"] }
+dioxus-html-internal-macro = "0.6"
 axum = "0.7"
 axum-macros = "0.5"
 tokio = { version = "1.0", features = ["full"] }
