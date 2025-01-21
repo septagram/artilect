@@ -42,9 +42,9 @@ pub struct User {
     pub email: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
-#[cfg_attr(feature = "frontend", derive(PartialEq, Identifiable))]
+#[cfg_attr(feature = "frontend", derive(Identifiable))]
 pub struct Thread {
     pub id: Uuid,
     pub name: Option<String>,

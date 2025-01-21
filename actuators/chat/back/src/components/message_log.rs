@@ -1,3 +1,4 @@
+use chat_dto::Thread;
 use dioxus::prelude::*;
 
 #[derive(Clone, PartialEq, sqlx::FromRow)]
@@ -12,7 +13,9 @@ pub mod dioxus_elements {
     use super::*;
 
     infer_lib::builder_constructors! {
-        messageLog None {};
+        messageLog None {
+            title: String DEFAULT,
+        };
         message None {
             date: String DEFAULT,
             time: String DEFAULT,
@@ -26,9 +29,10 @@ pub mod dioxus_elements {
 }
 
 #[component]
-pub fn MessageLog(messages: Vec<MessageLogItem>) -> Element {
+pub fn MessageLog(thread_name: Option<String>, messages: Vec<MessageLogItem>) -> Element {
     rsx! {
         messageLog {
+            title: thread_name,
             for message in messages.into_iter().rev() {
                 message {
                     date: message.created_at.date().to_string(),

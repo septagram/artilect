@@ -34,6 +34,18 @@ pub async fn health_check() -> impl IntoResponse {
     Json(json!({"status": "ok"}))
 }
 
+async fn fetch_thread(
+    pool: &PgPool,
+    thread_id: Uuid,
+) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
+    let thread = sqlx::query_as!(Thread, r#"--sql
+        SELECT id, name, owner_id, created_at, updated_at FROM threads WHERE id = $1
+        "#, thread_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(thread)
+}
+
 async fn create_thread(
     pool: &PgPool,
     user_id: Uuid,
@@ -136,10 +148,46 @@ async fn create_message(
 }
 
 async fn generate_thread_name(
-    pool: &PgPool,
+    state: &AppState,
     thread_id: Uuid,
 ) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
-    todo!()
+    let messages = sqlx::query_as!(
+        MessageLogItem,
+        r#"--sql
+            SELECT users.name AS user_name, messages.content, messages.created_at
+            FROM messages
+            JOIN users ON messages.user_id = users.id
+            WHERE messages.thread_id = $1 
+            ORDER BY messages.created_at DESC
+        "#,
+        thread_id
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let content = infer_lib::infer(&state.system_prompt, prompt!{
+        MessageLog {
+            thread_name: None,
+            messages,
+        }
+        instructions {
+            "Write a title for the thread that best summarizes the conversation. Respond with just the thread title, no quotes or extra text."
+        }
+    }?).await?;
+
+    let thread = sqlx::query_as!(
+        Thread,
+        r#"--sql
+        UPDATE threads SET name = $1 WHERE id = $2
+        RETURNING id, name, owner_id, created_at, updated_at
+        "#,
+        content,
+        thread_id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(thread)
 }
 
 async fn get_thread_message_ids(
@@ -163,6 +211,7 @@ async fn respond_to_thread(
 ) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
+    let thread = fetch_thread(&state.pool, thread_id).await?;
     let messages = sqlx::query_as!(
         MessageLogItem,
         r#"--sql
@@ -179,6 +228,7 @@ async fn respond_to_thread(
 
     let content = infer_lib::infer(&state.system_prompt, prompt!{
         MessageLog {
+            thread_name: thread.name,
             messages
         }
         instructions {
@@ -208,6 +258,11 @@ async fn chat(
     )
     .await?;
     let (ai_message, thread) = respond_to_thread(&state, thread_id).await?;
+    let thread = if request.is_new_thread {
+        generate_thread_name(&state, thread_id).await?
+    } else {
+        thread
+    };
     let threads = vec![SyncUpdate::Updated(thread)];
     let thread_messages = OneToManyUpdate {
         owner_id: thread_id,
