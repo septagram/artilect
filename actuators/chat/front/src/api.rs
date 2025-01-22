@@ -1,6 +1,9 @@
-use chat_dto::{FetchUserThreadsResponse, Message, SendMessageRequest, SendMessageResponse};
+use chat_dto::{
+    FetchThreadResponse, FetchUserThreadsResponse, Message, SendMessageRequest, SendMessageResponse,
+};
 use reqwest::Client;
 use std::error::Error;
+use uuid::Uuid;
 
 static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
 
@@ -8,6 +11,15 @@ pub async fn fetch_user_threads() -> Result<FetchUserThreadsResponse, Box<dyn Er
     let client = Client::new();
     let response = client.get(format!("{BASE_URL}/chats")).send().await?;
     Ok(response.json::<FetchUserThreadsResponse>().await?)
+}
+
+pub async fn fetch_thread(thread_id: Uuid) -> Result<FetchThreadResponse, Box<dyn Error>> {
+    let client = Client::new();
+    let response = client
+        .get(format!("{BASE_URL}/chat/{thread_id}"))
+        .send()
+        .await?;
+    Ok(response.json::<FetchThreadResponse>().await?)
 }
 
 pub async fn send_message(

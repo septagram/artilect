@@ -103,6 +103,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(handlers::health_check))
         .route("/chats", get(handlers::fetch_user_threads_handler))
+        .route("/chat/:thread_id", get(handlers::fetch_thread_handler))
         .route("/chat", post(handlers::chat_handler))
         // .route("/chat/:thread_id", get(handlers::get_thread))
         .layer(cors)

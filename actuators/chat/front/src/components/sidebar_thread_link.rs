@@ -25,4 +25,4 @@ pub fn SidebarThreadLink(thread_id: Uuid) -> Element {
             }
         }
     }
-} 
+}

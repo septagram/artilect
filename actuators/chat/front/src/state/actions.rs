@@ -22,6 +22,7 @@ where
 
 pub fn use_app_actions() {
     use_action::<FetchUserThreadsAction, _>(&handle_fetch_user_threads);
+    use_action::<FetchThreadAction, _>(&handle_fetch_thread);
     use_action::<SendMessageAction, _>(&handle_send_message);
 }
 
@@ -54,20 +55,56 @@ async fn handle_fetch_user_threads(mut state: State, _: FetchUserThreadsAction) 
     }
 }
 
-pub type SendMessageAction = String;
-async fn handle_send_message(mut state: State, content: SendMessageAction) {
-    let current_thread_id = *state.thread_id.read();
-    let is_new_thread = current_thread_id.is_none();
-    let thread_id = current_thread_id.unwrap_or_else(|| {
-        let id = Uuid::new_v4();
+pub type FetchThreadAction = Uuid;
+async fn handle_fetch_thread(mut state: State, thread_id: FetchThreadAction) {
+    match api::fetch_thread(thread_id).await {
+        Ok(response) => {
+            state.threads.with_mut(|t| {
+                consume_sync_update_batch(t, Some(response.threads));
+            });
+            // Make consume_one_to_many_update_batch fn!
+            state.messages.with_mut(|messages| {
+                state.thread_message_ids.with_mut(|thread_message_ids| {
+                    for update in response.thread_messages {
+                        let mut cur_thread_message_ids = vec![]; //thread_message_ids.entry(update.owner_id).or_insert(vec![]);
+                        for child in update.children {
+                            let id = match child {
+                                OneToManyChild::Id(id) => id,
+                                OneToManyChild::Value(child) => {
+                                    let id = child.id;
+                                    messages.insert(id, SyncState::Synced(child));
+                                    id
+                                }
+                            };
+                            cur_thread_message_ids.push(id);
+                        }
+                        thread_message_ids.insert(update.owner_id, cur_thread_message_ids);
+                    }
+                });
+            });
+        }
+        Err(error) => {
+            error!("Error fetching thread {thread_id}: {}", error);
+        }
+    }
+}
+
+pub struct SendMessageAction {
+    pub thread_id: Uuid,
+    pub is_new_thread: bool,
+    pub content: String,
+}
+async fn handle_send_message(mut state: State, action: SendMessageAction) {
+    let SendMessageAction { thread_id, is_new_thread, content } = action;
+    if is_new_thread {
         let now = OffsetDateTime::now_utc();
         state.threads.with_mut(|t| {
             t.insert(
-                id,
+                thread_id,
                 SyncState::Saving(
                     None,
                     Thread {
-                        id,
+                        id: thread_id,
                         name: None,
                         owner_id: *state.user_id.read(),
                         created_at: now,
@@ -77,11 +114,9 @@ async fn handle_send_message(mut state: State, content: SendMessageAction) {
             )
         });
         state.thread_list.with_mut(|thread_list| {
-            thread_list.insert(0, id);
+            thread_list.insert(0, thread_id);
         });
-        state.thread_id.set(Some(id));
-        id
-    });
+    };
     let now = OffsetDateTime::now_utc();
     let message = Message {
         id: Uuid::new_v4(),
@@ -102,6 +137,7 @@ async fn handle_send_message(mut state: State, content: SendMessageAction) {
             state.threads.with_mut(|t| {
                 consume_sync_update_batch(t, Some(response.threads));
             });
+            // Make consume_one_to_many_update_batch fn!
             state.messages.with_mut(|messages| {
                 state.thread_message_ids.with_mut(|thread_message_ids| {
                     for update in response.thread_messages {
