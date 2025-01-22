@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-use super::{Chat, SidebarThreadLink};
+use super::SidebarThreadLink;
 use crate::state::State;
 use crate::Route;
 
@@ -10,10 +10,7 @@ pub static CSS: Asset = asset!("/src/components/layout.css");
 #[component]
 pub fn Layout() -> Element {
     let state = use_context::<State>();
-    let thread_ids: Vec<_> = state.threads.read()
-        .iter()
-        .map(|(id, _)| *id)
-        .collect();
+    let thread_ids: Vec<Uuid> = state.thread_list.read().clone();
 
     rsx! {
         div { class: "app",

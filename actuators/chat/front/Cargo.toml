@@ -17,7 +17,7 @@ dioxus-logger = "0.6"
 dotenvy_macro = "0.15"
 getrandom = { version = "0.2", features = ["js"] }
 uuid = { version = "1.0", features = ["v4", "serde", "js"] }
-time = { version = "0.3", features = ["wasm-bindgen"] }
+time = { version = "0.3", features = ["wasm-bindgen", "serde", "parsing", "formatting"] }
 
 [features]
 default = ["web"]

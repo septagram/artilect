@@ -7,8 +7,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use chat_dto::{
-    Message, OneToManyChild, OneToManyUpdate, SendMessageRequest, SendMessageResponse, SyncUpdate,
-    Thread,
+    FetchUserThreadsResponse, Message, OneToManyChild, OneToManyUpdate, SendMessageRequest,
+    SendMessageResponse, SyncUpdate, Thread, User,
 };
 
 use crate::{components::message_log::MessageLogItem, components::MessageLog, state::AppState};
@@ -38,11 +38,15 @@ async fn fetch_thread(
     pool: &PgPool,
     thread_id: Uuid,
 ) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
-    let thread = sqlx::query_as!(Thread, r#"--sql
+    let thread = sqlx::query_as!(
+        Thread,
+        r#"--sql
         SELECT id, name, owner_id, created_at, updated_at FROM threads WHERE id = $1
-        "#, thread_id)
-        .fetch_one(pool)
-        .await?;
+        "#,
+        thread_id
+    )
+    .fetch_one(pool)
+    .await?;
     Ok(thread)
 }
 
@@ -232,13 +236,49 @@ async fn respond_to_thread(
             messages
         }
         instructions {
-            "Write a response to the user's message. Respond with just the content, no quotes or extra text."
+            "Write a response to the user's message. Note to respond in the language the user requested, or in the language of the last user message. Respond with just the content, no quotes or extra text."
         }
     }?).await?;
 
     let (message, thread) =
         create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
     Ok((message, thread))
+}
+
+async fn fetch_user_threads(
+    state: &AppState,
+) -> Result<FetchUserThreadsResponse, Box<dyn std::error::Error + Send + Sync>> {
+    let user = sqlx::query_as!(
+        User,
+        r#"--sql
+        SELECT id, name, email
+        FROM users
+        WHERE id = $1
+        "#,
+        state.user_id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    let threads = sqlx::query_as!(
+        Thread,
+        r#"--sql
+        SELECT t.id, t.name, t.owner_id, t.created_at, t.updated_at
+        FROM threads t
+        INNER JOIN thread_participants tp ON t.id = tp.thread_id 
+        WHERE tp.user_id = $1
+        ORDER BY t.updated_at DESC
+        "#,
+        state.user_id
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(FetchUserThreadsResponse {
+        users: vec![SyncUpdate::Updated(user)],
+        user_threads: vec![OneToManyUpdate {
+            owner_id: state.user_id,
+            children: threads.into_iter().map(|t| OneToManyChild::Value(t)).collect(),
+        }],
+    })
 }
 
 async fn chat(
@@ -284,6 +324,18 @@ async fn chat(
         threads,
         thread_messages: vec![thread_messages],
     })
+}
+
+pub async fn fetch_user_threads_handler(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<FetchUserThreadsResponse>, StatusCode> {
+    match fetch_user_threads(&state).await {
+        Ok(response) => Ok(Json(response)),
+        Err(e) => {
+            eprintln!("Error fetching user threads: {:#?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn chat_handler(

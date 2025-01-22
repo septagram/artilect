@@ -49,24 +49,10 @@ pub struct Thread {
     pub id: Uuid,
     pub name: Option<String>,
     pub owner_id: Uuid,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Deserialize))]
-#[cfg_attr(feature = "frontend", derive(Serialize))]
-pub struct SendMessageRequest {
-    pub message: Message,
-    pub is_new_thread: bool,
-}
-
-#[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
-pub struct SendMessageResponse {
-    pub threads: Vec<SyncUpdate<Thread>>,
-    pub thread_messages: Vec<OneToManyUpdate<Message>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,9 +63,44 @@ pub struct Message {
     pub thread_id: Uuid,
     pub user_id: Uuid,
     pub content: String,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub updated_at: Option<OffsetDateTime>,
 }
+
+#[derive(Debug)]
+#[cfg_attr(feature = "backend", derive(Serialize))]
+#[cfg_attr(feature = "frontend", derive(Deserialize))]
+pub struct FetchUserThreadsResponse {
+    pub users: Vec<SyncUpdate<User>>,
+    pub user_threads: Vec<OneToManyUpdate<Thread>>,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "backend", derive(Deserialize))]
+#[cfg_attr(feature = "frontend", derive(Serialize))]
+pub struct FetchThreadRequest {
+    pub thread_id: Uuid,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "backend", derive(Serialize))]
+#[cfg_attr(feature = "frontend", derive(Deserialize))]
+pub struct FetchThreadResponse {
+    pub threads: Vec<SyncUpdate<Thread>>,
+    pub thread_messages: Vec<OneToManyUpdate<Message>>,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "backend", derive(Deserialize))]
+#[cfg_attr(feature = "frontend", derive(Serialize))]
+pub struct SendMessageRequest {
+    pub message: Message,
+    pub is_new_thread: bool,
+}
+
+pub type SendMessageResponse = FetchThreadResponse;
 
 #[cfg(test)]
 mod tests {

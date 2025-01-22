@@ -12,6 +12,7 @@ pub struct State {
     pub user_id: Signal<Uuid>,
     pub messages: Signal<HashMap<Uuid, SyncState<Message>>>,
     pub threads: Signal<HashMap<Uuid, SyncState<Thread>>>,
+    pub thread_list: Signal<Vec<Uuid>>,
     pub thread_id: Signal<Option<Uuid>>,
     pub thread_message_ids: Signal<HashMap<Uuid, Vec<Uuid>>>,
 }
@@ -21,6 +22,7 @@ pub fn use_app_state() -> State {
         user_id: Signal::new(Uuid::parse_str(USER_ID_STR).expect("Failed to parse CHAT_USER_ID")),
         messages: Signal::new(HashMap::new()),
         threads: Signal::new(HashMap::new()),
+        thread_list: Signal::new(Vec::new()),
         thread_id: Signal::new(None),
         thread_message_ids: Signal::new(HashMap::new()),
     })

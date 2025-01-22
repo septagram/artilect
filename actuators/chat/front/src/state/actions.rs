@@ -1,12 +1,12 @@
-use dioxus::prelude::*;
 use dioxus::logger::tracing::error;
+use dioxus::prelude::*;
 use futures_util::{Future, StreamExt};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{consume_sync_update_batch, State, SyncState};
 use crate::api;
-use chat_dto::{Message, OneToManyChild, Thread};
+use chat_dto::{Message, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
 
 fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T>
 where
@@ -21,7 +21,37 @@ where
 }
 
 pub fn use_app_actions() {
+    use_action::<FetchUserThreadsAction, _>(&handle_fetch_user_threads);
     use_action::<SendMessageAction, _>(&handle_send_message);
+}
+
+pub type FetchUserThreadsAction = ();
+async fn handle_fetch_user_threads(mut state: State, _: FetchUserThreadsAction) {
+    match api::fetch_user_threads().await {
+        Ok(response) => {
+            let mut thread_updates = Vec::new();
+            state.thread_list.with_mut(|thread_list| {
+                thread_list.clear();
+                for OneToManyUpdate { children, .. } in response.user_threads {
+                    for child in children {
+                        match child {
+                            OneToManyChild::Value(thread) => {
+                                thread_list.push(thread.id);
+                                thread_updates.push(SyncUpdate::Updated(thread));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            });
+            state.threads.with_mut(|threads_state| {
+                consume_sync_update_batch(threads_state, Some(thread_updates));
+            });
+        }
+        Err(error) => {
+            error!("Error fetching user threads: {}", error);
+        }
+    }
 }
 
 pub type SendMessageAction = String;
@@ -45,6 +75,9 @@ async fn handle_send_message(mut state: State, content: SendMessageAction) {
                     },
                 ),
             )
+        });
+        state.thread_list.with_mut(|thread_list| {
+            thread_list.insert(0, id);
         });
         state.thread_id.set(Some(id));
         id
