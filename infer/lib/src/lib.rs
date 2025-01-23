@@ -21,6 +21,9 @@ pub enum InferError {
 
     #[error("LLM API request failed: {0}")]
     ApiError(#[from] reqwest::Error),
+
+    #[error("Broken reasoning sequence")]
+    BrokenReasoningSequence,
 }
 
 impl From<dioxus_core::prelude::RenderError> for InferError {
@@ -86,6 +89,17 @@ pub async fn infer(system_prompt: &str, prompt: String) -> Result<String, InferE
         },
     ];
     openai::send_openai_request(messages, model, infer_url).await
+}
+
+pub async fn infer_value(system_prompt: &str, prompt: String) -> Result<String, InferError> {
+    let result = infer(system_prompt, prompt).await?;
+    if !result.starts_with("<think>") {
+        return Ok(result);
+    }
+    match result.split("</think>").nth(1) {
+        Some(value) => Ok(value.to_string()),
+        None => Err(InferError::BrokenReasoningSequence),
+    }
 }
 
 #[cfg(test)]

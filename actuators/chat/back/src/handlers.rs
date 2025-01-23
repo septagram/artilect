@@ -178,14 +178,14 @@ async fn generate_thread_name(
     .fetch_all(&state.pool)
     .await?;
 
-    let content = infer_lib::infer(&state.system_prompt, prompt!{
+    let content = infer_lib::infer_value(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: None,
             messages,
         }
         instructions {
             "Write a title for the thread that best summarizes the conversation. ",
-            "Respond with just the thread title, no quotes or extra text. ",
+            "Respond with just the thread title, no preamble or quotes or extra text. ",
             "The title should be in the same language as the most messages are."
         }
     }?).await?;
@@ -241,7 +241,7 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let content = infer_lib::infer(&state.system_prompt, prompt!{
+    let content = infer_lib::infer_value(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: thread.name,
             messages
