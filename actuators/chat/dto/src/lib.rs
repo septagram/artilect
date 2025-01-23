@@ -61,7 +61,7 @@ pub struct Thread {
 pub struct Message {
     pub id: Uuid,
     pub thread_id: Uuid,
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>,
     pub content: String,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

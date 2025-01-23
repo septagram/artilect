@@ -20,8 +20,9 @@ pub fn ChatMessage(message_id: Uuid) -> Element {
         Some(message) => {
             let my_user_id = *use_context::<State>().user_id.read();
             let message_source = match message.user_id {
-                id if id == my_user_id => "me",
-                id if id == Uuid::nil() => "artilect",
+                None => "artilect", // TODO: different style for events
+                Some(id) if id == my_user_id => "me",
+                Some(id) if id == Uuid::nil() => "artilect",
                 _ => "other",
             };
             let class = format!("chat-message chat-message_user_{}", message_source);

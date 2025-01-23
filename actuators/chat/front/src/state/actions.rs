@@ -121,7 +121,7 @@ async fn handle_send_message(mut state: State, action: SendMessageAction) {
     let message = Message {
         id: Uuid::new_v4(),
         thread_id,
-        user_id: *state.user_id.read(),
+        user_id: Some(*state.user_id.read()),
         content,
         created_at: now,
         updated_at: None,
