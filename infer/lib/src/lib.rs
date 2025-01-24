@@ -97,7 +97,7 @@ pub async fn infer_value(system_prompt: &str, prompt: String) -> Result<String, 
         return Ok(result);
     }
     match result.split("</think>").nth(1) {
-        Some(value) => Ok(value.to_string()),
+        Some(value) => Ok(value.trim().to_string()),
         None => Err(InferError::BrokenReasoningSequence),
     }
 }

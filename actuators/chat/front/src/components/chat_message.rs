@@ -6,6 +6,7 @@ use crate::state::State;
 pub static CSS: Asset = asset!("/src/components/chat_message.css");
 #[component]
 pub fn ChatMessage(message_id: Uuid) -> Element {
+    let b = classnames::classname("chat-message");
     let state = use_context::<State>();
     let messages = state.messages.read();
     let message_state = messages
@@ -19,29 +20,33 @@ pub fn ChatMessage(message_id: Uuid) -> Element {
         None => rsx! {},
         Some(message) => {
             let my_user_id = *use_context::<State>().user_id.read();
-            let message_source = match message.user_id {
-                None => "artilect", // TODO: different style for events
-                Some(id) if id == my_user_id => "me",
-                Some(id) if id == Uuid::nil() => "artilect",
-                _ => "other",
+            let b = match message.user_id {
+                None => b.attr("event"),
+                Some(id) => {
+                    let message_source = match id {
+                        _ if id == my_user_id => "user-me",
+                        _ if id == Uuid::nil() => "user-artilect",
+                        _ => "user-other",
+                    };
+                    b.attr("message").attr(message_source)
+                }
             };
-            let class = format!("chat-message chat-message_user_{}", message_source);
             rsx! {
                 div {
-                    class: "{class}",
+                    class: b.to_string(),
                     p {
-                        class: "chat-message__text",
+                        class: b.el("text").to_string(),
                         "{message.content}"
                     }
                     if is_syncing {
                         p {
-                            class: "chat-message__syncing",
+                            class: b.el("syncing").to_string(),
                             "⟳"
                         }
                     }
                     if let Some(error) = error_text {
                         p {
-                            class: "chat-message__error",
+                            class: b.el("error").to_string(),
                             "Error: {error}"
                         }
                     }

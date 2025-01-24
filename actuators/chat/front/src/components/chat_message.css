@@ -1,4 +1,10 @@
-.chat-message {
+.chat-message--event {
+    align-self: center;
+    color: #444;
+    font-style: italic;
+}
+
+.chat-message--message {
     max-width: 80%;
     padding: 0.75rem;
     border-radius: 0.5rem;
@@ -6,19 +12,19 @@
     animation: chat-message__fade-in 0.2s ease-out;
 }
 
-.chat-message_user_me {
+.chat-message--user-me {
     align-self: flex-end;
     background: #007bff;
     color: white;
 }
 
-.chat-message_user_artilect {
+.chat-message--user-artilect {
     align-self: flex-start;
     background: #28a745;
     color: white;
 }
 
-.chat-message_user_other {
+.chat-message--user-other {
     align-self: flex-start;
     background: #6c757d;
     color: white;

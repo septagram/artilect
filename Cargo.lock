@@ -554,6 +554,7 @@ name = "chat-front"
 version = "0.1.0"
 dependencies = [
  "chat-dto",
+ "classnames",
  "dioxus",
  "dioxus-logger",
  "dioxus-web",
@@ -600,6 +601,15 @@ checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
  "ciborium-io",
  "half",
+]
+
+[[package]]
+name = "classnames"
+version = "2.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee516cdef54a28b1273e342220f3378e44802defbe1bd6f8816fc3ff07269d7f"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]
