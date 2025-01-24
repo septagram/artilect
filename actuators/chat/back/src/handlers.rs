@@ -103,27 +103,31 @@ async fn create_thread(
 
 async fn create_message(
     pool: &PgPool,
-    user_id: Uuid,
+    user_id: Option<Uuid>,
     thread_id: Uuid,
     message_id: Option<Uuid>,
     message: &str,
 ) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = pool.begin().await?;
-    let is_participant = sqlx::query!(
-        r#"--sql
-        SELECT EXISTS (
-            SELECT 1 FROM thread_participants
-            WHERE thread_id = $1 AND user_id = $2
+    let is_allowed_to_create_message = match user_id {
+        Some(user_id) => sqlx::query!(
+            r#"--sql
+            SELECT EXISTS (
+                SELECT 1 FROM thread_participants
+                WHERE thread_id = $1 AND user_id = $2
+            )
+            "#,
+            thread_id,
+            user_id
         )
-        "#,
-        thread_id,
-        user_id
-    )
-    .fetch_one(&mut *tx)
-    .await?
-    .exists;
+        .fetch_one(&mut *tx)
+        .await?
+        .exists
+        .unwrap_or(false),
+        None => true,
+    };
 
-    if !is_participant.unwrap_or(false) {
+    if !is_allowed_to_create_message {
         return Err(Box::new(sqlx::Error::Protocol(
             "User is not a participant in this thread".into(),
         )));
@@ -178,30 +182,41 @@ async fn generate_thread_name(
     .fetch_all(&state.pool)
     .await?;
 
-    let content = infer_lib::infer_value(&state.system_prompt, prompt!{
-        MessageLog {
-            thread_name: None,
-            messages,
-        }
-        instructions {
-            "Write a title for the thread that best summarizes the conversation. ",
-            "Respond with just the thread title, no preamble or quotes or extra text. ",
-            "The title should be in the same language as the most messages are."
-        }
-    }?).await?;
-
-    let thread = sqlx::query_as!(
-        Thread,
-        r#"--sql
-        UPDATE threads SET name = $1 WHERE id = $2
-        RETURNING id, name, owner_id, created_at, updated_at
-        "#,
-        content,
-        thread_id
+    let inference = infer_lib::infer_value(
+        &state.system_prompt,
+        prompt! {
+            MessageLog {
+                thread_name: None,
+                messages,
+            }
+            instructions {
+                "Write a title for the thread that best summarizes the conversation. ",
+                "Respond with just the thread title, no preamble or quotes or extra text. ",
+                "The title should be in the same language as the most messages are."
+            }
+        }?,
     )
-    .fetch_one(&state.pool)
-    .await?;
+    .await;
 
+    let thread = match inference {
+        Ok(content) => {
+            sqlx::query_as!(
+                Thread,
+                r#"--sql
+                UPDATE threads SET name = $1 WHERE id = $2
+                RETURNING id, name, owner_id, created_at, updated_at
+                "#,
+                content,
+                thread_id
+            )
+            .fetch_one(&state.pool)
+            .await?
+        }
+        Err(e) => {
+            create_message(&state.pool, None, thread_id, None, &e.to_string()).await?;
+            fetch_thread(&state, thread_id).await?
+        }
+    };
     Ok(thread)
 }
 
@@ -241,7 +256,7 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let content = infer_lib::infer_value(&state.system_prompt, prompt!{
+    let inference = infer_lib::infer_value(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: thread.name,
             messages
@@ -251,11 +266,26 @@ async fn respond_to_thread(
             "Note to respond in the language the user requested, or in the language of the last user message. ",
             "Respond with just the content, no quotes or extra text."
         }
-    }?).await?;
+    }?).await;
 
-    let (message, thread) =
-        create_message(&state.pool, state.self_user.id, thread_id, None, &content).await?;
-    Ok((message, thread))
+    match inference {
+        Ok(content) => Ok(create_message(
+            &state.pool,
+            Some(state.self_user.id),
+            thread_id,
+            None,
+            &content,
+        )
+        .await?),
+        Err(e) => Ok(create_message(
+            &state.pool,
+            None,
+            thread_id,
+            None,
+            &e.to_string(), //
+        )
+        .await?),
+    }
 }
 
 async fn fetch_user_threads(
@@ -333,7 +363,7 @@ async fn chat(
     }
     let (user_message, _) = create_message(
         &state.pool,
-        state.user_id,
+        Some(state.user_id),
         thread_id,
         Some(request.message.id),
         &request.message.content,

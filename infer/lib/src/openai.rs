@@ -23,6 +23,11 @@ struct OpenAIChoice {
     message: OpenAIMessage,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OpenAIError {
+    pub error: String,
+}
+
 pub async fn send_openai_request(
     messages: Vec<OpenAIMessage>,
     model: String,
@@ -34,14 +39,21 @@ pub async fn send_openai_request(
     };
 
     let client = reqwest::Client::new();
-    let response = client
+    let response_text = client
         .post(format!("{}/v1/chat/completions", infer_url))
         .json(&openai_request)
         .send()
         .await?
-        .json::<OpenAIResponse>()
+        .text()
         .await?;
 
+    // Try parsing as error response first
+    if let Ok(error_response) = serde_json::from_str::<OpenAIError>(&response_text) {
+        return Err(InferError::from(error_response));
+    }
+
+    // If not error, parse as success response
+    let response: OpenAIResponse = serde_json::from_str(&response_text)?;
     Ok(response
         .choices
         .first()
