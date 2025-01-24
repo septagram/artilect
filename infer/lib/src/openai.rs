@@ -13,17 +13,17 @@ pub struct OpenAIMessage {
     pub content: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct OpenAIResponse {
     choices: Vec<OpenAIChoice>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct OpenAIChoice {
     message: OpenAIMessage,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct OpenAIError {
     pub error: String,
 }
