@@ -23,6 +23,20 @@ pub trait FromLlmReplyArray {
 }
 pub trait FromLlmReplyArrayItem {}
 
+impl FromLlmReplyArrayItem for Box<str> {}
+
+impl FromLlmReplyArray for Vec<Box<str>> {
+    type Item = Box<str>;
+}
+
+impl FromLlmReplyArray for std::rc::Rc<[Box<str>]> {
+    type Item = Box<str>;
+}
+
+impl FromLlmReplyArray for std::sync::Arc<[Box<str>]> {
+    type Item = Box<str>;
+}
+
 pub trait FromLlmReply {
     fn from_reply(reply: &str) -> Result<Self, ParseError>
     where

@@ -99,14 +99,25 @@ pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Resu
     Ok(T::from_reply(&response?)?)
 }
 
-pub async fn infer_value<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Result<T, InferError> {
-    let model_has_reasoning = match std::env::var("MODEL_HAS_REASONING").unwrap_or_else(|_| "false".to_string()).as_str() {
+pub async fn infer_value<T: FromLlmReply>(
+    system_prompt: &str,
+    prompt: String,
+) -> Result<T, InferError> {
+    let model_has_reasoning = match std::env::var("MODEL_HAS_REASONING")
+        .unwrap_or_else(|_| "false".to_string())
+        .as_str()
+    {
         "true" => true,
         "false" => false,
-        other => panic!("MODEL_HAS_REASONING must be 'true' or 'false', got '{}'", other),
+        other => panic!(
+            "MODEL_HAS_REASONING must be 'true' or 'false', got '{}'",
+            other
+        ),
     };
     if model_has_reasoning {
-        infer::<WithReasoning<T>>(system_prompt, prompt).await.map(|wr| wr.reply)
+        infer::<WithReasoning<T>>(system_prompt, prompt)
+            .await
+            .map(|wr| wr.reply)
     } else {
         infer::<T>(system_prompt, prompt).await
     }
@@ -158,11 +169,105 @@ pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_core_macro::component;
     use super::*;
+    use dioxus_core_macro::component;
+    use infer_macros::FromLlmReplyArrayItem;
+    use parsing::{FromLlmReplyArray, FromLlmReplyArrayItem};
+    use serde::Deserialize;
 
-    fn setup() {
-        dotenvy::dotenv().ok();
+    mod top_level_array_parsing {
+        use super::*;
+        #[tokio::test]
+        async fn parses_top_level_array_of_strings() {
+            let system_prompt = crate::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}}).unwrap();
+            let prompt = prompt! {
+                instructions {
+                    "Break down the following text into a list of lines, return as JSON array of strings:\n\n",
+
+                    "And you, my father, there on the sad height,\n",
+                    "Curse, bless, me now with your fierce tears, I pray.\n",
+                    "Do not go gentle into that good night.\n",
+                    "Rage, rage against the dying of the light."
+                }
+                formatInstructions {
+                    "With no preamble, respond with a JSON array of strings."
+                }
+            };
+            let result = infer_value::<Vec<Box<str>>>(&system_prompt, prompt.unwrap())
+                .await
+                .map(|lines| {
+                    lines
+                        .into_iter()
+                        .map(|line| {
+                            line.chars()
+                                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                                .collect::<String>()
+                                .to_lowercase()
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .into()
+                        })
+                        .collect::<Vec<Box<str>>>()
+                });
+            assert!(result.is_ok());
+            let expected: Vec<Box<str>> = vec![
+                "and you my father there on the sad height".into(),
+                "curse bless me now with your fierce tears i pray".into(),
+                "do not go gentle into that good night".into(),
+                "rage rage against the dying of the light".into(),
+            ];
+            assert_eq!(result.unwrap(), expected);
+        }
+        #[tokio::test]
+        async fn parses_top_level_array_of_objects() {
+            #[derive(Debug, Deserialize, FromLlmReplyArrayItem, PartialEq)]
+            struct SpaceObject {
+                name: Box<str>,
+                mass: f64,
+                habitable: bool,
+            }
+
+            let system_prompt = crate::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}}).unwrap();
+            let prompt = prompt! {
+                instructions {
+                    "Here are some interesting celestial objects to consider:\n\n",
+                    "The Sun is our home star and the center of our solar system. It has a mass of 1.0 solar masses by definition.\n",
+                    "Proxima Centauri b is an exoplanet orbiting the nearest star to our Sun. It's about 1.17 times Earth's mass (0.0000035 solar masses) and lies in the habitable zone.\n",
+                    "Betelgeuse is a red supergiant star with approximately 19 solar masses. It's far too hot to be habitable.\n\n",
+                    "Parse this information into structured data."
+                }
+                formatInstructions {
+                    "Respond with a JSON array of objects in the following format: {{\n",
+                    "    \"name\": the name of the celestial object\n",
+                    "    \"mass\": the mass of the celestial object in solar masses\n",
+                    "    \"habitable\": true if the celestial object is habitable, false otherwise\n",
+                    "}}"
+                }
+            };
+
+            let result = infer_value::<Vec<SpaceObject>>(&system_prompt, prompt.unwrap()).await;
+            assert!(result.is_ok());
+
+            let objects = result.unwrap();
+            assert_eq!(objects.len(), 3);
+
+            // Verify structure is parsed correctly by checking first object
+            assert!(objects[0].name.len() > 0);
+            assert!(objects[0].mass > 0.0);
+            assert!(matches!(objects[0].habitable, true | false));
+            assert!(objects[0].name.to_lowercase().contains("sun"));
+            assert_eq!(objects[0].mass, 1.0);
+            // Habitable is in the eye of the beholder, as far as LLMs go, apparently :P
+
+            assert!(objects[1].name.to_lowercase().contains("centauri"));
+            assert_eq!(objects[1].mass, 0.0000035);
+            assert!(objects[1].habitable);
+
+            assert!(objects[2].name.to_lowercase().contains("betelgeuse"));
+            assert_eq!(objects[2].mass, 19.0);
+            assert!(!objects[2].habitable);
+        }
     }
 
     mod context_length_error {
@@ -170,31 +275,27 @@ mod tests {
 
         #[tokio::test]
         async fn detects_context_length_error() {
-            setup();
             let error = "Trying to keep the first 5406 tokens when context the overflows. \
                 However, the model is loaded with context length of only 1056 tokens, which is not enough. \
                 Try to load the model with a larger context length, or provide a shorter input";
-            
+
             assert!(is_context_length_error(error).await.unwrap());
         }
 
         #[tokio::test]
         async fn ignores_rate_limit_error() {
-            setup();
             let error = "API rate limit exceeded. Please try again later.";
             assert!(!is_context_length_error(error).await.unwrap());
         }
 
         #[tokio::test]
         async fn ignores_auth_error() {
-            setup();
             let error = "Invalid API key. Please check your credentials and try again.";
             assert!(!is_context_length_error(error).await.unwrap());
         }
 
         #[tokio::test]
         async fn ignores_overload_error() {
-            setup();
             let error = "Model 'gpt-4' is currently overloaded. Please try again later.";
             assert!(!is_context_length_error(error).await.unwrap());
         }
