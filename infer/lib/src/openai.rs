@@ -1,6 +1,24 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use crate::InferError;
+#[derive(Error, Debug)]
+pub enum ApiError {
+    #[error("Request failed: {0}")]
+    RequestFailed(#[from] reqwest::Error),
+
+    #[error("Response parsing failed: {0}")]
+    ParseFailed(#[from] serde_json::Error),
+
+    #[error("Error response from API: {0}")]
+    ErrorResponse(String),
+}
+
+impl From<OpenAIError> for ApiError {
+    fn from(err: OpenAIError) -> Self {
+        ApiError::ErrorResponse(err.error)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct OpenAIRequest {
     pub model: String,
@@ -28,11 +46,11 @@ pub struct OpenAIError {
     pub error: String,
 }
 
-pub async fn send_openai_request(
+pub async fn openai_request(
     messages: Vec<OpenAIMessage>,
     model: String,
     infer_url: String,
-) -> Result<String, InferError> {
+) -> Result<String, ApiError> {
     let openai_request = OpenAIRequest {
         model,
         messages,
@@ -49,7 +67,7 @@ pub async fn send_openai_request(
 
     // Try parsing as error response first
     if let Ok(error_response) = serde_json::from_str::<OpenAIError>(&response_text) {
-        return Err(InferError::from(error_response));
+        return Err(ApiError::from(error_response));
     }
 
     // If not error, parse as success response
@@ -59,4 +77,4 @@ pub async fn send_openai_request(
         .first()
         .map(|choice| choice.message.content.clone())
         .unwrap_or_default())
-} 
+}

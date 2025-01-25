@@ -3,10 +3,16 @@ use dioxus::prelude::*;
 mod error;
 pub use error::InferError;
 mod components;
+pub use components::SystemPrompt;
 pub mod element_constructors;
 mod openai;
-pub use components::SystemPrompt;
-use openai::OpenAIMessage;
+use openai::{ApiError, OpenAIMessage};
+mod parsing;
+pub use parsing::{FromLlmReply, ParseError, YesNoReply};
+
+const AGENT_PROMPT_TEXT: &str = "You are the inference agent. \
+You are responsible for assisting other agents by solving \
+various isolated problems.";
 
 #[macro_export]
 macro_rules! prompt {
@@ -58,7 +64,7 @@ pub fn render_system_prompt(agent_system_prompt: &Element) -> Result<String, Inf
     }
 }
 
-pub async fn infer(system_prompt: &str, prompt: String) -> Result<String, InferError> {
+pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Result<T, InferError> {
     let model = std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| "default".to_string());
     let infer_url = std::env::var("INFER_URL").unwrap_or_else(|_| "http://infer".to_string());
     let messages = vec![
@@ -71,18 +77,70 @@ pub async fn infer(system_prompt: &str, prompt: String) -> Result<String, InferE
             content: prompt,
         },
     ];
-    openai::send_openai_request(messages, model, infer_url).await
+    let response = match openai::openai_request(messages, model, infer_url).await {
+        Ok(response) => Ok(response),
+        Err(error) => match error {
+            ApiError::ErrorResponse(error_text) => {
+                Err(match is_context_length_error(error_text.as_str()).await {
+                    Ok(true) => InferError::ContextLengthError,
+                    Ok(false) => ApiError::ErrorResponse(error_text.clone()).into(),
+                    Err(second_error) => {
+                        eprintln!(
+                            "Warning: Error from is_context_length_error: {:?}",
+                            second_error
+                        );
+                        ApiError::ErrorResponse(error_text.clone()).into()
+                    }
+                })
+            }
+            _ => return Err(error.into()),
+        },
+    };
+    Ok(T::from_reply(&response?)?)
 }
 
-pub async fn infer_value(system_prompt: &str, prompt: String) -> Result<String, InferError> {
-    let result = infer(system_prompt, prompt).await?;
-    if !result.starts_with("<think>") {
-        return Ok(result);
+#[allow(non_snake_case, non_upper_case_globals)]
+pub mod dioxus_elements {
+    // pub use dioxus::html::elements::*; // TODO: remove this
+    use super::*;
+
+    crate::builder_constructors! {
+        instructions None {};
+        formatInstructions None {};
     }
-    match result.split("</think>").nth(1) {
-        Some(value) => Ok(value.trim().to_string()),
-        None => Err(InferError::BrokenReasoningSequence),
+
+    pub mod elements {
+        pub use super::*;
     }
+}
+
+#[component]
+pub fn IsContextLengthPrompt(error: String) -> Element {
+    let quoted_error = serde_json::to_string(&error).map_err(|e| RenderError::Aborted(e.into()))?;
+    rsx! {
+        instructions {
+            "The following is an error message from OpenAI: {quoted_error}. ",
+            "Is this an error about context length?"
+        }
+        formatInstructions {
+            "With no preamble, respond with a JSON object in the following format: {{\n",
+            "    \"answer\": true if this is a context length error, false otherwise\n",
+            "}}"
+        }
+    }
+}
+
+pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
+    let system_prompt = crate::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})?;
+    Ok(
+        Box::pin(crate::infer::<YesNoReply>(&system_prompt, prompt! {
+            IsContextLengthPrompt {
+                error: error.to_string(),
+            }
+        }?))
+        .await?
+        .into(),
+    )
 }
 
 #[cfg(test)]

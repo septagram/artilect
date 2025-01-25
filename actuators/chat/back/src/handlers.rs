@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use infer_lib::prompt;
 use serde_json::json;
 use sqlx::PgPool;
+use std::ops::Deref;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -175,14 +176,15 @@ async fn generate_thread_name(
             FROM messages
             JOIN users ON messages.user_id = users.id
             WHERE messages.thread_id = $1 
-            ORDER BY messages.created_at DESC
+            ORDER BY messages.created_at ASC
         "#,
+        // @note: DESC sorting b/c we will have to eventually introduce LIMIT
         thread_id
     )
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer_value(
+    let inference = infer_lib::infer::<Box<str>>(
         &state.system_prompt,
         prompt! {
             MessageLog {
@@ -206,7 +208,7 @@ async fn generate_thread_name(
                 UPDATE threads SET name = $1 WHERE id = $2
                 RETURNING id, name, owner_id, created_at, updated_at
                 "#,
-                content,
+                content.deref(),
                 thread_id
             )
             .fetch_one(&state.pool)
@@ -226,7 +228,10 @@ async fn get_thread_message_ids(
 ) -> Result<Vec<Uuid>, Box<dyn std::error::Error + Send + Sync>> {
     let messages = sqlx::query!(
         r#"--sql
-        SELECT id FROM messages WHERE thread_id = $1
+            SELECT id
+            FROM messages
+            WHERE thread_id = $1
+            ORDER BY created_at ASC
         "#,
         thread_id
     )
@@ -256,7 +261,7 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer_value(&state.system_prompt, prompt!{
+    let inference = infer_lib::infer::<Box<str>>(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: thread.name,
             messages
@@ -335,7 +340,10 @@ async fn fetch_thread_messages(
     let messages = sqlx::query_as!(
         Message,
         r#"--sql
-        SELECT id, thread_id, user_id, content, created_at, updated_at FROM messages WHERE thread_id = $1
+            SELECT id, thread_id, user_id, content, created_at, updated_at
+            FROM messages
+            WHERE thread_id = $1
+            ORDER BY created_at ASC
         "#,
         thread_id
     )

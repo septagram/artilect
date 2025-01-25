@@ -2904,11 +2904,21 @@ dependencies = [
  "dioxus-html",
  "dioxus-html-internal-macro",
  "dioxus-ssr",
+ "infer-macros",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
  "thiserror 2.0.11",
  "xmltree",
+]
+
+[[package]]
+name = "infer-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.94",
 ]
 
 [[package]]

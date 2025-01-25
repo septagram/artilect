@@ -1,23 +1,6 @@
-use crate::openai::OpenAIError;
+use crate::openai::{OpenAIError, ApiError};
 use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum ApiError {
-    #[error("Request failed: {0}")]
-    RequestFailed(#[from] reqwest::Error),
-
-    #[error("Response parsing failed: {0}")]
-    ParseFailed(#[from] serde_json::Error),
-
-    #[error("Error response from API: {0}")]
-    ErrorResponse(String),
-}
-
-impl From<OpenAIError> for ApiError {
-    fn from(err: OpenAIError) -> Self {
-        ApiError::ErrorResponse(err.error)
-    }
-}
+use crate::parsing::ParseError;
 
 #[derive(Error, Debug)]
 pub enum InferError {
@@ -27,8 +10,11 @@ pub enum InferError {
     #[error("LLM API error: {0}")]
     ApiError(#[from] ApiError),
 
-    #[error("Broken reasoning sequence")]
-    BrokenReasoningSequence,
+    #[error("Failed to parse LLM response: {0}")]
+    ParseError(#[from] ParseError),
+
+    #[error("Context length error")]
+    ContextLengthError,
 }
 
 impl From<dioxus_core::prelude::RenderError> for InferError {
