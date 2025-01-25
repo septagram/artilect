@@ -6,6 +6,7 @@ use axum::{
 };
 use dioxus::prelude::*;
 use infer_lib::prompt;
+use infer_lib::PlainText;
 use serde_json::json;
 use sqlx::PgPool;
 use std::ops::Deref;
@@ -184,7 +185,7 @@ async fn generate_thread_name(
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer::<Box<str>>(
+    let inference = infer_lib::infer_value::<PlainText>(
         &state.system_prompt,
         prompt! {
             MessageLog {
@@ -201,7 +202,7 @@ async fn generate_thread_name(
     .await;
 
     let thread = match inference {
-        Ok(content) => {
+        Ok(PlainText(content)) => {
             sqlx::query_as!(
                 Thread,
                 r#"--sql
@@ -261,7 +262,7 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer::<Box<str>>(&state.system_prompt, prompt!{
+    let inference = infer_lib::infer_value::<PlainText>(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: thread.name,
             messages
@@ -274,12 +275,12 @@ async fn respond_to_thread(
     }?).await;
 
     match inference {
-        Ok(content) => Ok(create_message(
+        Ok(PlainText(content)) => Ok(create_message(
             &state.pool,
             Some(state.self_user.id),
             thread_id,
             None,
-            &content,
+            content.deref(),
         )
         .await?),
         Err(e) => Ok(create_message(

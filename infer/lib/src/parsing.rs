@@ -29,18 +29,26 @@ pub trait FromLlmReply {
         Self: Sized;
 }
 
-impl FromLlmReply for Box<str> {
-    fn from_reply(reply: &str) -> Result<Self, ParseError> {
-        Ok(reply.into())
+pub struct PlainText(pub Box<str>);
+
+impl PlainText {
+    pub fn get(self) -> Box<str> {
+        self.0
     }
 }
 
-pub struct ReplyWithReasoning<T: FromLlmReply> {
+impl FromLlmReply for PlainText {
+    fn from_reply(reply: &str) -> Result<Self, ParseError> {
+        Ok(PlainText(reply.into()))
+    }
+}
+
+pub struct WithReasoning<T: FromLlmReply> {
     pub reply: T,
     pub reasoning: Box<str>,
 }
 
-impl<T: FromLlmReply> FromLlmReply for ReplyWithReasoning<T> {
+impl<T: FromLlmReply> FromLlmReply for WithReasoning<T> {
     fn from_reply(reply: &str) -> Result<Self, ParseError> {
         const THINK_TAG: &str = "<think>";
         if !reply.starts_with(THINK_TAG) {
@@ -48,7 +56,7 @@ impl<T: FromLlmReply> FromLlmReply for ReplyWithReasoning<T> {
         }
         let reply = &reply[THINK_TAG.len()..];
         match reply.split_once("</think>") {
-            Some((reasoning, reply)) => Ok(ReplyWithReasoning {
+            Some((reasoning, reply)) => Ok(WithReasoning {
                 reply: T::from_reply(reply.trim())?,
                 reasoning: reasoning.trim().into(),
             }),

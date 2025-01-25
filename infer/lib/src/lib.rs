@@ -8,7 +8,7 @@ pub mod element_constructors;
 mod openai;
 use openai::{ApiError, OpenAIMessage};
 mod parsing;
-pub use parsing::{FromLlmReply, ParseError, YesNoReply};
+pub use parsing::{FromLlmReply, ParseError, PlainText, WithReasoning, YesNoReply};
 use std::sync::Arc;
 const AGENT_PROMPT_TEXT: &str = "You are the inference agent. \
 You are responsible for assisting other agents by solving \
@@ -99,6 +99,19 @@ pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Resu
     Ok(T::from_reply(&response?)?)
 }
 
+pub async fn infer_value<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Result<T, InferError> {
+    let model_has_reasoning = match std::env::var("MODEL_HAS_REASONING").unwrap_or_else(|_| "false".to_string()).as_str() {
+        "true" => true,
+        "false" => false,
+        other => panic!("MODEL_HAS_REASONING must be 'true' or 'false', got '{}'", other),
+    };
+    if model_has_reasoning {
+        infer::<WithReasoning<T>>(system_prompt, prompt).await.map(|wr| wr.reply)
+    } else {
+        infer::<T>(system_prompt, prompt).await
+    }
+}
+
 #[allow(non_snake_case, non_upper_case_globals)]
 pub mod dioxus_elements {
     // pub use dioxus::html::elements::*; // TODO: remove this
@@ -133,7 +146,7 @@ pub fn IsContextLengthPrompt(error: String) -> Element {
 pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
     let system_prompt = crate::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})?;
     Ok(
-        Box::pin(crate::infer::<YesNoReply>(&system_prompt, prompt! {
+        Box::pin(crate::infer_value::<YesNoReply>(&system_prompt, prompt! {
             IsContextLengthPrompt {
                 error: error.to_string(),
             }
@@ -146,6 +159,44 @@ pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
 #[cfg(test)]
 mod tests {
     use dioxus_core_macro::component;
-
     use super::*;
+
+    fn setup() {
+        dotenvy::dotenv().ok();
+    }
+
+    mod context_length_error {
+        use super::*;
+
+        #[tokio::test]
+        async fn detects_context_length_error() {
+            setup();
+            let error = "Trying to keep the first 5406 tokens when context the overflows. \
+                However, the model is loaded with context length of only 1056 tokens, which is not enough. \
+                Try to load the model with a larger context length, or provide a shorter input";
+            
+            assert!(is_context_length_error(error).await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn ignores_rate_limit_error() {
+            setup();
+            let error = "API rate limit exceeded. Please try again later.";
+            assert!(!is_context_length_error(error).await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn ignores_auth_error() {
+            setup();
+            let error = "Invalid API key. Please check your credentials and try again.";
+            assert!(!is_context_length_error(error).await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn ignores_overload_error() {
+            setup();
+            let error = "Model 'gpt-4' is currently overloaded. Please try again later.";
+            assert!(!is_context_length_error(error).await.unwrap());
+        }
+    }
 }

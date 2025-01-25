@@ -1,4 +1,3 @@
-use chat_dto::Thread;
 use dioxus::prelude::*;
 
 #[derive(Clone, PartialEq, sqlx::FromRow)]
