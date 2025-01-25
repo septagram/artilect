@@ -9,7 +9,7 @@ mod openai;
 use openai::{ApiError, OpenAIMessage};
 mod parsing;
 pub use parsing::{FromLlmReply, ParseError, YesNoReply};
-
+use std::sync::Arc;
 const AGENT_PROMPT_TEXT: &str = "You are the inference agent. \
 You are responsible for assisting other agents by solving \
 various isolated problems.";
@@ -82,7 +82,7 @@ pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Resu
         Err(error) => match error {
             ApiError::ErrorResponse(error_text) => {
                 Err(match is_context_length_error(error_text.as_str()).await {
-                    Ok(true) => InferError::ContextLengthError,
+                    Ok(true) => InferError::ContextLengthError(Arc::from(error_text)),
                     Ok(false) => ApiError::ErrorResponse(error_text.clone()).into(),
                     Err(second_error) => {
                         eprintln!(

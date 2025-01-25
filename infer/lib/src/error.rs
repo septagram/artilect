@@ -1,5 +1,6 @@
 use crate::openai::{OpenAIError, ApiError};
 use thiserror::Error;
+use std::sync::Arc;
 use crate::parsing::ParseError;
 
 #[derive(Error, Debug)]
@@ -13,8 +14,8 @@ pub enum InferError {
     #[error("Failed to parse LLM response: {0}")]
     ParseError(#[from] ParseError),
 
-    #[error("Context length error")]
-    ContextLengthError,
+    #[error("Context length error: {0}")]
+    ContextLengthError(Arc<str>),
 }
 
 impl From<dioxus_core::prelude::RenderError> for InferError {
