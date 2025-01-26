@@ -10,7 +10,7 @@
     flex-grow: 1;
     overflow-y: auto;
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse;
     gap: 1rem;
     padding-right: 1rem;
 }

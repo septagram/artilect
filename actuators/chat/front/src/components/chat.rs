@@ -59,7 +59,7 @@ pub fn Chat(thread_id: Option<Uuid>) -> Element {
     rsx! {
         div { class: "chat",
             div { class: "chat__history",
-                for message_id in &thread_message_ids {
+                for message_id in thread_message_ids.iter().rev() {
                     ChatMessage {
                         key: "{message_id}",
                         message_id: *message_id,
