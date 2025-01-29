@@ -9,6 +9,7 @@ mod components;
 mod state;
 use components::{Chat, Layout, NewChat, Style};
 use state::actions::FetchUserThreadsAction;
+
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
@@ -23,7 +24,18 @@ const FAVICON: Asset = asset!("/assets/favicon.ico");
 
 fn main() {
     dioxus_logger::init(Level::INFO).unwrap();
-    dioxus::launch(App);
+    dioxus::LaunchBuilder::new()
+        .with_cfg(desktop!({
+            use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+            use tao::window::Theme;
+            Config::new().with_menu(None).with_window(
+                WindowBuilder::default()
+                    .with_title("Artilect")
+                    .with_maximized(true)
+                    .with_theme(Some(Theme::Dark)),
+            )
+        }))
+        .launch(App);
 }
 
 #[component]

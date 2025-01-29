@@ -1,6 +1,6 @@
 .chat-message--event {
     align-self: center;
-    color: #444;
+    color: #aaa;
     font-style: italic;
 }
 
@@ -9,25 +9,25 @@
     padding: 0.75rem;
     border-radius: 0.5rem;
     position: relative;
-    animation: chat-message__fade-in 0.2s ease-out;
+    animation: chat-message__fade-in 0.8s ease-out;
 }
 
 .chat-message--user-me {
     align-self: flex-end;
-    background: #007bff;
-    color: white;
+    background: #0f3460;
+    color: #ddd;
 }
 
 .chat-message--user-artilect {
     align-self: flex-start;
-    background: #28a745;
-    color: white;
+    background: #16213e;
+    color: #ddd;
 }
 
 .chat-message--user-other {
     align-self: flex-start;
-    background: #6c757d;
-    color: white;
+    background: #16213e;
+    color: #ddd;
 }
 
 .chat-message__text {
@@ -43,11 +43,12 @@
     font-size: 0.8rem;
     opacity: 0.7;
     animation: chat-message__syncing_spin 1s linear infinite;
+    color: #e94560;
 }
 
 .chat-message__error {
     margin: 0.5rem 0 0 0;
-    color: #dc3545;
+    color: #e94560;
     font-size: 0.8rem;
 }
 
@@ -61,13 +62,15 @@
 }
 
 @keyframes chat-message__fade-in {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(10px);
+        background: #e94560;
     }
-    to {
+    25% {
         opacity: 1;
         transform: translateY(0);
+        background: #e94560;
     }
 }
 
