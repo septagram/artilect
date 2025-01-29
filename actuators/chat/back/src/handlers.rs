@@ -177,7 +177,7 @@ async fn generate_thread_name(
             FROM messages
             JOIN users ON messages.user_id = users.id
             WHERE messages.thread_id = $1 
-            ORDER BY messages.created_at ASC
+            ORDER BY messages.created_at DESC
         "#,
         // @note: DESC sorting b/c we will have to eventually introduce LIMIT
         thread_id
