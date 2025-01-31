@@ -4,6 +4,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use axum_extra::TypedHeader;
+use headers::authorization::{Authorization, Bearer};
 use dioxus::prelude::*;
 use infer_lib::prompt;
 use infer_lib::PlainText;
@@ -48,13 +50,32 @@ async fn fetch_thread(
     let thread = sqlx::query_as!(
         Thread,
         r#"--sql
+        SELECT id, name, owner_id, created_at, updated_at
+        FROM threads
+        WHERE id = $1
+        "#,
+        thread_id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(thread)
+}
+
+async fn fetch_thread_for_user(
+    state: &AppState,
+    user_id: Uuid,
+    thread_id: Uuid,
+) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
+    let thread = sqlx::query_as!(
+        Thread,
+        r#"--sql
         SELECT t.id, t.name, t.owner_id, t.created_at, t.updated_at
         FROM threads AS t
         LEFT JOIN thread_participants AS tp ON t.id = tp.thread_id
         WHERE t.id = $1 AND tp.user_id = $2
         "#,
         thread_id,
-        state.user_id
+        user_id
     )
     .fetch_one(&state.pool)
     .await?;
@@ -296,6 +317,7 @@ async fn respond_to_thread(
 
 async fn fetch_user_threads(
     state: &AppState,
+    user_id: Uuid,
 ) -> Result<FetchUserThreadsResponse, Box<dyn std::error::Error + Send + Sync>> {
     let user = sqlx::query_as!(
         User,
@@ -304,7 +326,7 @@ async fn fetch_user_threads(
         FROM users
         WHERE id = $1
         "#,
-        state.user_id
+        user_id
     )
     .fetch_one(&state.pool)
     .await?;
@@ -317,14 +339,14 @@ async fn fetch_user_threads(
         WHERE tp.user_id = $1
         ORDER BY t.updated_at DESC
         "#,
-        state.user_id
+        user_id
     )
     .fetch_all(&state.pool)
     .await?;
     Ok(FetchUserThreadsResponse {
         users: vec![SyncUpdate::Updated(user)],
         user_threads: vec![OneToManyUpdate {
-            owner_id: state.user_id,
+            owner_id: user_id,
             children: threads
                 .into_iter()
                 .map(|t| OneToManyChild::Value(t))
@@ -335,9 +357,10 @@ async fn fetch_user_threads(
 
 async fn fetch_thread_messages(
     state: &AppState,
+    user_id: Uuid,
     thread_id: Uuid,
 ) -> Result<FetchThreadResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let thread = fetch_thread(state, thread_id).await?;
+    let thread = fetch_thread_for_user(state, user_id, thread_id).await?;
     let messages = sqlx::query_as!(
         Message,
         r#"--sql
@@ -364,15 +387,16 @@ async fn fetch_thread_messages(
 
 async fn chat(
     state: &AppState,
+    user_id: Uuid,
     request: &SendMessageRequest,
 ) -> Result<SendMessageResponse, Box<dyn std::error::Error + Send + Sync>> {
     let thread_id = request.message.thread_id;
     if request.is_new_thread {
-        create_thread(&state.pool, state.user_id, thread_id).await?;
+        create_thread(&state.pool, user_id, thread_id).await?;
     }
     let (user_message, _) = create_message(
         &state.pool,
-        Some(state.user_id),
+        Some(user_id),
         thread_id,
         Some(request.message.id),
         &request.message.content,
@@ -409,8 +433,10 @@ async fn chat(
 
 pub async fn fetch_user_threads_handler(
     State(state): State<Arc<AppState>>,
+    auth_header: TypedHeader<Authorization<Bearer>>,
 ) -> Result<Json<FetchUserThreadsResponse>, StatusCode> {
-    match fetch_user_threads(&state).await {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    match fetch_user_threads(&state, user_id).await {
         Ok(response) => Ok(Json(response)),
         Err(e) => {
             eprintln!("Error fetching user threads: {:#?}", e);
@@ -421,9 +447,11 @@ pub async fn fetch_user_threads_handler(
 
 pub async fn fetch_thread_handler(
     State(state): State<Arc<AppState>>,
+    auth_header: TypedHeader<Authorization<Bearer>>,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<FetchThreadResponse>, StatusCode> {
-    match fetch_thread_messages(&state, thread_id).await {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    match fetch_thread_messages(&state, user_id, thread_id).await {
         Ok(response) => Ok(Json(response)),
         Err(e) => {
             eprintln!("Error fetching thread messages: {:#?}", e);
@@ -434,9 +462,11 @@ pub async fn fetch_thread_handler(
 
 pub async fn chat_handler(
     State(state): State<Arc<AppState>>,
+    auth_header: TypedHeader<Authorization<Bearer>>,
     Json(request): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, StatusCode> {
-    match chat(&state, &request).await {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    match chat(&state, user_id, &request).await {
         Ok(response) => Ok(Json(response)),
         Err(e) => {
             eprintln!("Error in chat handler: {:#?}", e);

@@ -15,7 +15,7 @@
             "command": "dx",
             "problemMatcher": ["$rustc"],
             "group": "none",
-            "args": ["serve", "--port=3000", "--platform=web"],
+            "args": ["serve", "--addr=0.0.0.0", "--port=3000", "--platform=web"],
             "options": {
                 "cwd": "${workspaceFolder}/actuators/chat/front"
             },

@@ -80,8 +80,6 @@ async fn main() {
         .await
         .expect("Failed to ensure Artilect user");
 
-    let user_id_str = std::env::var("USER_ID").expect("USER_ID must be set");
-    let user_id = Uuid::parse_str(&user_id_str).expect("USER_ID must be a valid UUID");
     let system_prompt = infer_lib::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
         .expect("Failed to render system prompt");
 
@@ -89,7 +87,6 @@ async fn main() {
     let state = Arc::new(AppState {
         pool,
         self_user,
-        user_id,
         system_prompt,
     });
 
@@ -97,15 +94,14 @@ async fn main() {
     let cors = CorsLayer::new()
         .allow_origin("*".parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers([axum::http::HeaderName::from_static("content-type")]);
+        .allow_headers([http::header::AUTHORIZATION, http::header::CONTENT_TYPE]);
 
     // Build router
     let app = Router::new()
         .route("/health", get(handlers::health_check))
         .route("/chats", get(handlers::fetch_user_threads_handler))
-        .route("/chat/:thread_id", get(handlers::fetch_thread_handler))
+        .route("/chat/{thread_id}", get(handlers::fetch_thread_handler))
         .route("/chat", post(handlers::chat_handler))
-        // .route("/chat/:thread_id", get(handlers::get_thread))
         .layer(cors)
         .with_state(state);
 
