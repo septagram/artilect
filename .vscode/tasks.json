@@ -19,6 +19,17 @@
             "args": ["-p", "chat"],
         },
         {
+            "label": "Run auth frontend web",
+            "type": "shell",
+            "command": "dx",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
+            "args": ["serve", "--port=3010", "--platform=web"],
+            "options": {
+                "cwd": "${workspaceFolder}/auth/front"
+            },
+        },
+        {
             "label": "Run chat frontend web",
             "type": "shell",
             "command": "dx",
@@ -55,6 +66,20 @@
             "problemMatcher": ["$rustc"],
             "group": "none",
             "dependsOn": ["Release: Build chat backend"],
+            "presentation": {
+                "group": "release-servers"
+            }
+        },
+        {
+            "label": "Release: Run auth frontend web",
+            "type": "shell",
+            "command": "dx",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
+            "args": ["serve", "--port=3010", "--platform=web", "--release"],
+            "options": {
+                "cwd": "${workspaceFolder}/auth/front"
+            },
             "presentation": {
                 "group": "release-servers"
             }

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "auth/front",
     "actuators/chat/back",
     "actuators/chat/front",
     "actuators/chat/dto",
