@@ -2,7 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build chat backend",
+            "label": "DB migrate",
+            "type": "shell",
+            "command": "./migrate.sh",
+            "options": {
+                "cwd": "${workspaceFolder}/db"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build chat backend",
             "type": "cargo",
             "command": "build",
             "problemMatcher": ["$rustc"],
@@ -10,7 +19,7 @@
             "args": ["-p", "chat"],
         },
         {
-            "label": "run chat fe web",
+            "label": "Run chat frontend web",
             "type": "shell",
             "command": "dx",
             "problemMatcher": ["$rustc"],
@@ -21,7 +30,7 @@
             },
         },
         {
-            "label": "run chat fe desktop",
+            "label": "Run chat frontend desktop",
             "type": "shell",
             "command": "dx",
             "problemMatcher": ["$rustc"],
@@ -32,13 +41,64 @@
             },
         },
         {
-            "label": "db migrate",
+            "label": "Release: Build chat backend",
+            "type": "cargo",
+            "command": "build",
+            "problemMatcher": ["$rustc"],
+            "group": "build",
+            "args": ["-p", "chat", "--release"],
+        },
+        {
+            "label": "Release: Run chat backend",
             "type": "shell",
-            "command": "./migrate.sh",
+            "command": "target/release/chat",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
+            "dependsOn": ["Release: Build chat backend"],
+            "presentation": {
+                "group": "release-servers"
+            }
+        },
+        {
+            "label": "Release: Run chat frontend web",
+            "type": "shell",
+            "command": "./run-release.sh",
+            "problemMatcher": ["$rustc"],
+            "group": "none",
             "options": {
-                "cwd": "${workspaceFolder}/db"
+                "cwd": "${workspaceFolder}/actuators/chat/front"
             },
-            "problemMatcher": []
+            "presentation": {
+                "group": "release-servers"
+            }
+        },
+        {
+            "label": "Release: Build chat frontend (windows)",
+            "type": "shell",
+            "command": "actuators/chat/front/build-release-windows.sh",
+            "problemMatcher": ["$rustc"],
+            "group": "build",
+            "presentation": {
+                "group": "release-servers"
+            }
+        },
+        {
+            "label": "Release: Run all servers",
+            "dependsOn": [
+                "Release: Run chat backend",
+                "Release: Run chat frontend web",
+                "Release: Run auth frontend web",
+                "Release: Build chat frontend (windows)"
+            ],
+            "dependsOrder": "parallel",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
         }
     ]
 }

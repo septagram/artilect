@@ -322,7 +322,7 @@ async fn fetch_user_threads(
     let user = sqlx::query_as!(
         User,
         r#"--sql
-        SELECT id, name, email
+        SELECT id, name
         FROM users
         WHERE id = $1
         "#,

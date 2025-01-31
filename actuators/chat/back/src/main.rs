@@ -44,11 +44,11 @@ async fn ensure_artilect_user(pool: &PgPool) -> Result<User, sqlx::Error> {
     let user = sqlx::query_as!(
         User,
         r#"--sql
-            INSERT INTO users (id, name, email)
-            VALUES ($1, $2, 'self@localhost')
+            INSERT INTO users (id, name)
+            VALUES ($1, $2)
             ON CONFLICT (id) DO UPDATE
             SET name = $2
-            RETURNING id, name, email
+            RETURNING id, name
         "#,
         artilect_id,
         name,
@@ -67,7 +67,7 @@ async fn main() {
 
     // Load configuration
     dotenvy::dotenv().ok();
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = std::env::var("CHAT_DATABASE_URL").expect("DATABASE_URL must be set");
     let port = std::env::var("PORT").unwrap_or_else(|_| "80".to_string());
 
     // Create database connection pool

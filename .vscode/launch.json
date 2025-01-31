@@ -20,10 +20,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Chat Backend",
-            "preLaunchTask": "build chat backend",
+            "preLaunchTask": "Build chat backend",
             "program": "${workspaceFolder}/target/debug/chat",
             "args": [],
-            "cwd": "${workspaceFolder}/actuators/chat/back"
         },
     ]
 } 

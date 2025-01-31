@@ -39,7 +39,6 @@ pub struct OneToManyUpdate<T> {
 pub struct User {
     pub id: Uuid,
     pub name: String,
-    pub email: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
