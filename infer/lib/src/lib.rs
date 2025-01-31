@@ -67,16 +67,27 @@ pub fn render_system_prompt(agent_system_prompt: &Element) -> Result<String, Inf
 pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Result<T, InferError> {
     let model = std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| "default".to_string());
     let infer_url = std::env::var("INFER_URL").unwrap_or_else(|_| "http://infer".to_string());
-    let messages = vec![
-        OpenAIMessage {
-            role: "system".to_string(),
-            content: system_prompt.to_string(),
-        },
-        OpenAIMessage {
+    let model_use_system_prompt = std::env::var("MODEL_USE_SYSTEM_PROMPT")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .expect("MODEL_USE_SYSTEM_PROMPT must be 'true' or 'false'");
+    let messages = if model_use_system_prompt {
+        vec![
+            OpenAIMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            },
+            OpenAIMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ]
+    } else {
+        vec![OpenAIMessage {
             role: "user".to_string(),
-            content: prompt,
-        },
-    ];
+            content: system_prompt.to_string() + &prompt,
+        }]
+    };
     let response = match openai::openai_request(messages, model, infer_url).await {
         Ok(response) => Ok(response),
         Err(error) => match error {
@@ -103,17 +114,10 @@ pub async fn infer_value<T: FromLlmReply>(
     system_prompt: &str,
     prompt: String,
 ) -> Result<T, InferError> {
-    let model_has_reasoning = match std::env::var("MODEL_HAS_REASONING")
+    let model_has_reasoning = std::env::var("MODEL_HAS_REASONING")
         .unwrap_or_else(|_| "false".to_string())
-        .as_str()
-    {
-        "true" => true,
-        "false" => false,
-        other => panic!(
-            "MODEL_HAS_REASONING must be 'true' or 'false', got '{}'",
-            other
-        ),
-    };
+        .parse::<bool>()
+        .expect("MODEL_HAS_REASONING must be 'true' or 'false'");
     if model_has_reasoning {
         infer::<WithReasoning<T>>(system_prompt, prompt)
             .await
