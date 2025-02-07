@@ -11,7 +11,7 @@ pub struct MessageLogItem {
 pub mod dioxus_elements {
     use super::*;
 
-    infer_lib::builder_constructors! {
+    infer::builder_constructors! {
         messageLog None {
             title: String DEFAULT,
         };

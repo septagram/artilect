@@ -8,18 +8,18 @@ edition = "2021"
 
 [dependencies]
 chat-dto = { path = "../dto", features = ["frontend"] }
-dioxus = { version = "0.6", features = ["router"] }
-dioxus-web = { version = "0.6" }
-classnames = "2.1"
-reqwest = { version = "0.12", features = ["json"] }
-serde_json = "1.0"
-futures-util = "0.3"
-dioxus-logger = "0.6"
-dotenvy_macro = "0.15"
-getrandom = { version = "0.2", features = ["js"] }
-tao = { version = "0.30", optional = true }
-uuid = { version = "1.0", features = ["v4", "serde", "js"] }
-time = { version = "0.3", features = ["wasm-bindgen", "serde", "parsing", "formatting"] }
+dioxus = { workspace = true, features = ["router"] }
+dioxus-web = { workspace = true }
+classnames = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde_json = { workspace = true }
+futures-util = { workspace = true }
+dioxus-logger = { workspace = true }
+dotenvy_macro = { workspace = true }
+getrandom = { workspace = true, features = ["js"] }
+tao = { workspace = true, optional = true }
+uuid = { workspace = true, features = ["v4", "serde", "js"] }
+time = { workspace = true, features = ["wasm-bindgen", "serde", "parsing", "formatting"] }
 
 [features]
 default = ["web"]

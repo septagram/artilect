@@ -1,21 +1,21 @@
 [package]
-name = "infer-lib"
+name = "infer"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dioxus = { version = "0.6", features = ["macro"] }
-dioxus-ssr = "0.6"
-dioxus-html = "0.6"
-dioxus-core = "0.6"
-dioxus-core-macro = "0.6"
-dioxus-html-internal-macro = "0.6"
-xmltree = "0.11"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-reqwest = { version = "0.11", features = ["json"] }
-thiserror = "2.0"
+dioxus = { workspace = true, features = ["macro"] }
+dioxus-ssr = { workspace = true }
+dioxus-html = { workspace = true }
+dioxus-core = { workspace = true }
+dioxus-core-macro = { workspace = true }
+dioxus-html-internal-macro = { workspace = true }
+xmltree = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+thiserror = { workspace = true }
 infer-macros = { path = "../macros" }
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

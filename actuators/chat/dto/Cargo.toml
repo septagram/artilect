@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-uuid = { version = "1.0", features = ["v4", "serde"] }
-serde = { version = "1.0", features = ["derive"] }
-time = { version = "0.3", features = ["serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+serde = { workspace = true, features = ["derive"] }
+time = { workspace = true, features = ["serde"] }
 chat-macros = { path = "../macros", optional = true }
 
 [features]

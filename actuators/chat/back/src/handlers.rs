@@ -7,8 +7,8 @@ use axum::{
 use axum_extra::TypedHeader;
 use headers::authorization::{Authorization, Bearer};
 use dioxus::prelude::*;
-use infer_lib::prompt;
-use infer_lib::PlainText;
+use infer::prompt;
+use infer::PlainText;
 use serde_json::json;
 use sqlx::PgPool;
 use std::ops::Deref;
@@ -27,7 +27,7 @@ pub mod dioxus_elements {
     // pub use dioxus::html::elements::*; // TODO: remove this
     use super::*;
 
-    infer_lib::builder_constructors! {
+    infer::builder_constructors! {
         instructions None {};
     }
 
@@ -206,7 +206,7 @@ async fn generate_thread_name(
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer_value::<PlainText>(
+    let inference = infer::infer_value::<PlainText>(
         &state.system_prompt,
         prompt! {
             MessageLog {
@@ -283,7 +283,7 @@ async fn respond_to_thread(
     .fetch_all(&state.pool)
     .await?;
 
-    let inference = infer_lib::infer_value::<PlainText>(&state.system_prompt, prompt!{
+    let inference = infer::infer_value::<PlainText>(&state.system_prompt, prompt!{
         MessageLog {
             thread_name: thread.name,
             messages

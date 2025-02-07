@@ -1,28 +1,37 @@
 [package]
-name = "chat"
+name = "chat-back"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "chat"
+path = "src/main.rs"
+
 [dependencies]
 chat-dto = { path = "../dto", features = ["backend"] }
-infer-lib = { path = "../../../infer/lib" }
+infer = { path = "../../../infer/lib" }
 
-dioxus = { version = "0.6", features = ["macro"] }
-dioxus-html-internal-macro = "0.6"
-axum = "0.8"
-axum-macros = "0.5"
-axum-extra = { version = "0.10", features = ["typed-header"] }
-http = "1.2"
-headers = "0.4"
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tower-http = { version = "0.5", features = ["cors"] }
-reqwest = { version = "0.11", features = ["json"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-async-openai = "0.17"
-dotenvy = "0.15"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "time"] }
-uuid = { version = "1.11", features = ["v4", "fast-rng", "serde"] }
-time = { version = "0.3", features = ["local-offset"] }
+dioxus = { workspace = true, features = ["macro"] }
+dioxus-html-internal-macro = { workspace = true }
+axum = { workspace = true }
+axum-macros = { workspace = true }
+axum-extra = { workspace = true, features = ["typed-header"] }
+http = { workspace = true }
+headers = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tower-http = { workspace = true, features = ["cors"] }
+reqwest = { workspace = true, features = ["json"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-openai = { workspace = true }
+dotenvy = { workspace = true }
+sqlx = { workspace = true, features = [
+    "runtime-tokio",
+    "postgres",
+    "uuid",
+    "time",
+] }
+uuid = { workspace = true, features = ["v4", "fast-rng", "serde"] }
+time = { workspace = true, features = ["local-offset"] }

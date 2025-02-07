@@ -80,7 +80,7 @@ async fn main() {
         .await
         .expect("Failed to ensure Artilect user");
 
-    let system_prompt = infer_lib::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
+    let system_prompt = infer::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
         .expect("Failed to render system prompt");
 
     // Create shared state
