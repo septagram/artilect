@@ -1,3 +1,4 @@
+use actix::Addr;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -5,8 +6,8 @@ use axum::{
     Json,
 };
 use axum_extra::TypedHeader;
-use headers::authorization::{Authorization, Bearer};
 use dioxus::prelude::*;
+use headers::authorization::{Authorization, Bearer};
 use infer::prompt;
 use infer::PlainText;
 use serde_json::json;
@@ -15,12 +16,13 @@ use std::ops::Deref;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use auth_dto::{Authenticated, Identity};
 use chat_dto::{
     FetchThreadResponse, FetchUserThreadsResponse, Message, OneToManyChild, OneToManyUpdate,
     SendMessageRequest, SendMessageResponse, SyncUpdate, Thread, User,
 };
 
-use crate::{components::message_log::MessageLogItem, components::MessageLog, state::AppState};
+use crate::{actor::ChatService, components::message_log::MessageLogItem, components::MessageLog};
 
 #[allow(non_snake_case, non_upper_case_globals)]
 pub mod dioxus_elements {
@@ -44,7 +46,7 @@ pub async fn health_check() -> impl IntoResponse {
 }
 
 async fn fetch_thread(
-    state: &AppState,
+    state: &ChatService,
     thread_id: Uuid,
 ) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
     let thread = sqlx::query_as!(
@@ -62,7 +64,7 @@ async fn fetch_thread(
 }
 
 async fn fetch_thread_for_user(
-    state: &AppState,
+    state: &ChatService,
     user_id: Uuid,
     thread_id: Uuid,
 ) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
@@ -188,7 +190,7 @@ async fn create_message(
 }
 
 async fn generate_thread_name(
-    state: &AppState,
+    state: &ChatService,
     thread_id: Uuid,
 ) -> Result<Thread, Box<dyn std::error::Error + Send + Sync>> {
     let messages = sqlx::query_as!(
@@ -263,7 +265,7 @@ async fn get_thread_message_ids(
 }
 
 async fn respond_to_thread(
-    state: &AppState,
+    state: &ChatService,
     thread_id: Uuid,
 ) -> Result<(Message, Thread), Box<dyn std::error::Error + Send + Sync>> {
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
@@ -356,7 +358,7 @@ async fn fetch_user_threads(
 }
 
 async fn fetch_thread_messages(
-    state: &AppState,
+    state: &ChatService,
     user_id: Uuid,
     thread_id: Uuid,
 ) -> Result<FetchThreadResponse, Box<dyn std::error::Error + Send + Sync>> {
@@ -386,7 +388,7 @@ async fn fetch_thread_messages(
 }
 
 async fn chat(
-    state: &AppState,
+    state: &ChatService,
     user_id: Uuid,
     request: &SendMessageRequest,
 ) -> Result<SendMessageResponse, Box<dyn std::error::Error + Send + Sync>> {
@@ -432,11 +434,11 @@ async fn chat(
 }
 
 pub async fn fetch_user_threads_handler(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<Addr<ChatService>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
 ) -> Result<Json<FetchUserThreadsResponse>, StatusCode> {
     let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| StatusCode::UNAUTHORIZED)?;
-    match fetch_user_threads(&state, user_id).await {
+    match service.handle(Authenticated(user_id, FetchUserThreadsRequest())).await {
         Ok(response) => Ok(Json(response)),
         Err(e) => {
             eprintln!("Error fetching user threads: {:#?}", e);
@@ -446,7 +448,7 @@ pub async fn fetch_user_threads_handler(
 }
 
 pub async fn fetch_thread_handler(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<Addr<ChatService>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<FetchThreadResponse>, StatusCode> {
@@ -461,7 +463,7 @@ pub async fn fetch_thread_handler(
 }
 
 pub async fn chat_handler(
-    State(state): State<Arc<AppState>>,
+    State(service): State<Arc<Addr<ChatService>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(request): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, StatusCode> {

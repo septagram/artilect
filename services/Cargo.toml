@@ -1,0 +1,16 @@
+[package]
+name = "services"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chat-back = { path = "../actuators/chat/back", optional = true }
+chat-dto = { path = "../actuators/chat/dto", optional = true }
+auth-back = { path = "../auth/back", optional = true }
+auth-dto = { path = "../auth/dto", optional = true }
+
+[features]
+chat-in = ["dep:chat-back"]
+chat-out = ["chat-dto/frontend"]
+auth-in = ["dep:auth-back"]
+auth-out = ["auth-dto/frontend"]

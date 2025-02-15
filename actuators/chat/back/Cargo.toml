@@ -6,10 +6,16 @@ edition = "2021"
 [[bin]]
 name = "chat"
 path = "src/main.rs"
+features = ["microservice"]
+
+[features]
+microservice = ["services/auth-out"]
 
 [dependencies]
+# auth-dto = { path = "../../../auth/dto", features = ["frontend"] }
 chat-dto = { path = "../dto", features = ["backend"] }
 infer = { path = "../../../infer/lib" }
+services = { path = "../../../services" }
 
 dioxus = { workspace = true, features = ["macro"] }
 dioxus-html-internal-macro = { workspace = true }
@@ -35,3 +41,4 @@ sqlx = { workspace = true, features = [
 ] }
 uuid = { workspace = true, features = ["v4", "fast-rng", "serde"] }
 time = { workspace = true, features = ["local-offset"] }
+actix = { workspace = true }

@@ -79,6 +79,11 @@ pub struct FetchUserThreadsResponse {
 #[derive(Debug)]
 #[cfg_attr(feature = "backend", derive(Deserialize))]
 #[cfg_attr(feature = "frontend", derive(Serialize))]
+pub struct FetchUserThreadsRequest ();
+
+#[derive(Debug)]
+#[cfg_attr(feature = "backend", derive(Deserialize))]
+#[cfg_attr(feature = "frontend", derive(Serialize))]
 pub struct FetchThreadRequest {
     pub thread_id: Uuid,
 }

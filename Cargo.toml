@@ -2,12 +2,14 @@
 members = [
     "auth/back",
     "auth/front",
+    "auth/dto",
     "actuators/chat/back",
     "actuators/chat/front",
     "actuators/chat/dto",
     "actuators/chat/macros",
     "infer/lib",
     "infer/macros",
+    "services",
 ]
 resolver = "2"
 
@@ -60,3 +62,4 @@ quote = { version = "1.0" }
 syn = { version = "1.0" }
 xmltree = "0.11"
 thiserror = "2.0"
+actix = "0.13.5"
