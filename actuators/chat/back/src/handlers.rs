@@ -357,6 +357,59 @@ async fn fetch_user_threads(
     })
 }
 
+impl Handler<FetchUserThreadsRequest> for ChatService {
+    type Result = Result<FetchUserThreadsResponse, Box<dyn std::error::Error + Send + Sync>>;
+
+    async fn handle(
+        &self,
+        Authenticated(identity, _): Authenticated<FetchUserThreadsRequest>,
+    ) -> Result<FetchUserThreadsResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let user_id = match identity {
+            Identity::User(user_id) => user_id,
+            _ => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid identity",
+                )))
+            }
+        };
+        let user = sqlx::query_as!(
+            User,
+            r#"--sql
+        SELECT id, name
+        FROM users
+        WHERE id = $1
+        "#,
+            user_id
+        )
+        .fetch_one(&state.pool)
+        .await?;
+        let threads = sqlx::query_as!(
+            Thread,
+            r#"--sql
+        SELECT t.id, t.name, t.owner_id, t.created_at, t.updated_at
+        FROM threads t
+        INNER JOIN thread_participants tp ON t.id = tp.thread_id 
+        WHERE tp.user_id = $1
+        ORDER BY t.updated_at DESC
+        "#,
+            user_id
+        )
+        .fetch_all(&state.pool)
+        .await?;
+        Ok(FetchUserThreadsResponse {
+            users: vec![SyncUpdate::Updated(user)],
+            user_threads: vec![OneToManyUpdate {
+                owner_id: user_id,
+                children: threads
+                    .into_iter()
+                    .map(|t| OneToManyChild::Value(t))
+                    .collect(),
+            }],
+        })
+    }
+}
+
 async fn fetch_thread_messages(
     state: &ChatService,
     user_id: Uuid,
