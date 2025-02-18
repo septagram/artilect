@@ -1,17 +1,130 @@
 [workspace]
 members = [
-    "auth/back",
-    "auth/front",
-    "auth/dto",
-    "actuators/chat/back",
-    "actuators/chat/front",
-    "actuators/chat/dto",
-    "actuators/chat/macros",
-    "infer/lib",
-    "infer/macros",
-    "services",
+    "macro",
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.package]
+authors = ["Igor Novikov <septagramm@gmail.com>"]
+edition = "2024"
+license = "Apache-2.0"
+keywords = ["ai", "agents", "llm", "chat"]
+
+[package]
+name = "artilect"
+version = "0.1.0"
+default-run = "artilect"
+
+[[bin]]
+name = "artilect"
+path = "src/main.rs"
+
+[features]
+backend = ["dep:sqlx"]
+server-http2 = [
+    "backend",
+    "dep:axum",
+    "dep:axum-macros",
+    "dep:axum-extra",
+    "dep:http",
+    "dep:headers",
+    "dep:tower-http",
+]
+client-http2 = ["dep:reqwest"]
+frontend = [
+    "client-http2",
+    "classnames",
+    "futures-util",
+    "dotenvy_macro",
+    "dep:time/wasm-bindgen",
+    "dep:dioxus/router",
+
+    # Dioxus default features
+    # "dep:dioxus/asset",
+    # "dep:dioxus/cli-config",
+    # "dep:dioxus/devtools",
+    # "dep:dioxus/document",
+    # "dep:dioxus/file_engine",
+    # "dep:dioxus/hooks",
+    # "dep:dioxus/html",
+    # "dep:dioxus/launch",
+    # "dep:dioxus/logger",
+    # "dep:dioxus/macro",
+    # "dep:dioxus/mounted",
+    # "dep:dioxus/signals",
+    # "dep:dioxus/warnings",
+]
+infer = [
+    "dep:dioxus-lib",
+    "dep:dioxus-ssr",
+    "dep:dioxus_html_internal_macro",
+    "dep:xmltree",
+
+    # @note: use dioxus-lib instead?
+    # "dep:dioxus_core",
+    # "dep:dioxus_core_macro",
+    # "dep:dioxus_ssr",
+    # "dep:dioxus_html_internal_macro",
+    # "dep:xmltree",
+]
+chat-in = ["backend", "infer"]
+chat-out = ["client"]
+auth-in = ["backend"]
+auth-out = ["client"]
+
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop", "tao"]
+mobile = ["dioxus/mobile"]
+
+[dependencies]
+macro = { path = "macro" }
+actix = { version = "0.13.5" }
+tokio = { version = "1.43", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+uuid = { version = "1.13", features = ["v4", "serde", "js", "fast-rng"] }
+time = { version = "0.3", features = [
+    "serde",
+    "parsing",
+    "formatting",
+    "local-offset",
+] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
+dotenvy = { version = "0.15" }
+thiserror = { version = "2.0" }
+
+dioxus = { version = "0.6", optional = true }
+dioxus-lib = { version = "0.6", optional = true }
+dioxus-ssr = { version = "0.6", optional = true }
+# dioxus-html = { version = "0.6", optional = true }
+dioxus-core = { version = "0.6", optional = true }
+dioxus-core-macro = { version = "0.6", optional = true }
+dioxus-html-internal-macro = { version = "0.6", optional = true }
+# dioxus-logger = { version = "0.6", optional = true }
+futures-util = { version = "0.3", optional = true }
+classnames = { version = "2.1", optional = true }
+# getrandom = { version = "0.2", optional = true, features = ["js"] }
+reqwest = { version = "0.12", optional = true, features = ["json"] }
+dotenvy_macro = { version = "0.15", optional = true }
+tao = { version = "0.30", optional = true }
+axum = { version = "0.8", optional = true }
+axum-macros = { version = "0.5", optional = true }
+axum-extra = { version = "0.10", optional = true }
+http = { version = "1.2", optional = true }
+headers = { version = "0.4", optional = true }
+tower-http = { version = "0.5", optional = true, features = ["cors"] }
+async-openai = { version = "0.17", optional = true }
+sqlx = { version = "0.8", optional = true, features = [
+    "runtime-tokio",
+    "postgres",
+    "uuid",
+    "time",
+] }
+xmltree = { version = "0.11", optional = true }
 
 [profile]
 
@@ -24,42 +137,3 @@ inherits = "dev"
 
 [profile.android-dev]
 inherits = "dev"
-
-[workspace.dependencies]
-dioxus = "0.6"
-dioxus-web = "0.6"
-dioxus-ssr = "0.6"
-dioxus-html = "0.6"
-dioxus-core = "0.6"
-dioxus-core-macro = "0.6"
-dioxus-html-internal-macro = "0.6"
-classnames = "2.1"
-reqwest = "0.12"
-serde = "1.0"
-serde_json = "1.0"
-futures-util = "0.3"
-dioxus-logger = "0.6"
-dotenvy_macro = "0.15"
-getrandom = "0.2"
-tao = "0.30"
-uuid = "1.13"
-time = "0.3"
-oauth2 = "5.0"
-axum = "0.8"
-axum-macros = "0.5"
-axum-extra = "0.10"
-http = "1.2"
-headers = "0.4"
-tokio = "1.43"
-tower-http = "0.5"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-async-openai = "0.17"
-dotenvy = "0.15"
-sqlx = "0.8"
-proc-macro2 = { version = "1.0" }
-quote = { version = "1.0" }
-syn = { version = "1.0" }
-xmltree = "0.11"
-thiserror = "2.0"
-actix = "0.13.5"
