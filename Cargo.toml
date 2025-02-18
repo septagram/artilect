@@ -16,11 +16,11 @@ keywords = ["ai", "agents", "llm", "chat"]
 [package]
 name = "artilect"
 version = "0.1.0"
-default-run = "artilect"
-
-[[bin]]
-name = "artilect"
-path = "src/main.rs"
+# default-run = "artilect"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
 
 [features]
 backend = ["dep:sqlx"]
@@ -36,11 +36,11 @@ server-http2 = [
 client-http2 = ["dep:reqwest"]
 frontend = [
     "client-http2",
-    "classnames",
-    "futures-util",
-    "dotenvy_macro",
-    "dep:time/wasm-bindgen",
-    "dep:dioxus/router",
+    "dep:classnames",
+    "dep:futures-util",
+    "dep:dotenvy_macro",
+    "time/wasm-bindgen",
+    "dioxus/router",
 
     # Dioxus default features
     # "dep:dioxus/asset",
@@ -60,7 +60,7 @@ frontend = [
 infer = [
     "dep:dioxus-lib",
     "dep:dioxus-ssr",
-    "dep:dioxus_html_internal_macro",
+    "dep:dioxus-html-internal-macro",
     "dep:xmltree",
 
     # @note: use dioxus-lib instead?
@@ -70,17 +70,19 @@ infer = [
     # "dep:dioxus_html_internal_macro",
     # "dep:xmltree",
 ]
-chat-in = ["backend", "infer"]
-chat-out = ["client"]
 auth-in = ["backend"]
-auth-out = ["client"]
+auth-out = ["client-http2"]
+auth-front = ["auth-out", "frontend"]
+chat-in = ["backend", "infer"]
+chat-out = ["client-http2"]
+chat-front = ["chat-out", "frontend"]
 
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop", "tao"]
 mobile = ["dioxus/mobile"]
 
 [dependencies]
-macro = { path = "macro" }
+artilect-macro = { path = "macro" }
 actix = { version = "0.13.5" }
 tokio = { version = "1.43", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
