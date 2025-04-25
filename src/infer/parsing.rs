@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use thiserror::Error;
 
-pub use infer_macros::FromLlmReply;
+pub use artilect_macro::FromLlmReply;
 
 #[derive(Error, Debug)]
 pub enum ParseError {

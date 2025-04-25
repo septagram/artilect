@@ -1,8 +1,8 @@
-pub use services::ServiceIdentity;
+// pub use crate::service;
+// use uuid::Uuid;
+// pub enum Identity {
+//     User(Uuid),
+//     Service(service::Identity),
+// }
 
-pub enum Identity {
-    User(Uuid),
-    Service(ServiceIdentity),
-}
-
-pub struct Authenticated<T> (Identity, T);
+// pub struct Authenticated<T> (pub Identity, pub T);

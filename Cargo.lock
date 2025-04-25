@@ -418,6 +418,7 @@ dependencies = [
  "axum-core",
  "bytes",
  "futures-util",
+ "headers",
  "http 1.2.0",
  "http-body 1.0.1",
  "http-body-util",

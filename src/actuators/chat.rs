@@ -1,7 +1,7 @@
-mod dto;
+pub mod dto;
 
 #[cfg(feature = "chat-in")]
-mod back;
+pub mod back;
 
 #[cfg(feature = "chat-front")]
-mod front;
+pub mod front;

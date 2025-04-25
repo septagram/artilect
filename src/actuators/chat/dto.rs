@@ -1,13 +1,12 @@
+use crate::{service, Authenticated, Identifiable};
+use actix::Message;
+use artilect_macro::Authenticated;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 #[cfg(feature = "frontend")]
-use macro::Identifiable;
-
-pub trait Identifiable {
-    fn get_id(&self) -> Uuid;
-}
+use artilect_macro::Identifiable;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "backend", derive(Serialize))]
@@ -57,7 +56,7 @@ pub struct Thread {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "frontend", derive(PartialEq, Identifiable))]
 #[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
-pub struct Message {
+pub struct ChatMessage {
     pub id: Uuid,
     pub thread_id: Uuid,
     pub user_id: Option<Uuid>,
@@ -76,15 +75,20 @@ pub struct FetchUserThreadsResponse {
     pub user_threads: Vec<OneToManyUpdate<Thread>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Authenticated, Message)]
+#[rtype(result = "service::Result<FetchUserThreadsResponse>")]
 #[cfg_attr(feature = "backend", derive(Deserialize))]
 #[cfg_attr(feature = "frontend", derive(Serialize))]
-pub struct FetchUserThreadsRequest ();
+pub struct FetchUserThreadsRequest {
+    pub from_user_id: Uuid,
+}
 
-#[derive(Debug)]
+#[derive(Debug, Authenticated, Message)]
+#[rtype(result = "service::Result<FetchThreadResponse>")]
 #[cfg_attr(feature = "backend", derive(Deserialize))]
 #[cfg_attr(feature = "frontend", derive(Serialize))]
 pub struct FetchThreadRequest {
+    pub from_user_id: Uuid,
     pub thread_id: Uuid,
 }
 
@@ -93,14 +97,16 @@ pub struct FetchThreadRequest {
 #[cfg_attr(feature = "frontend", derive(Deserialize))]
 pub struct FetchThreadResponse {
     pub threads: Vec<SyncUpdate<Thread>>,
-    pub thread_messages: Vec<OneToManyUpdate<Message>>,
+    pub thread_messages: Vec<OneToManyUpdate<ChatMessage>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Authenticated, Message)]
+#[rtype(result = "service::Result<SendMessageResponse>")]
 #[cfg_attr(feature = "backend", derive(Deserialize))]
 #[cfg_attr(feature = "frontend", derive(Serialize))]
 pub struct SendMessageRequest {
-    pub message: Message,
+    pub from_user_id: Uuid,
+    pub message: ChatMessage,
     pub is_new_thread: bool,
 }
 

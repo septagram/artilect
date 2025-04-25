@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use dioxus_lib::prelude::*;
 
 #[derive(Clone, PartialEq, sqlx::FromRow)]
 pub struct MessageLogItem {
@@ -11,7 +11,7 @@ pub struct MessageLogItem {
 pub mod dioxus_elements {
     use super::*;
 
-    infer::builder_constructors! {
+    crate::builder_constructors! {
         messageLog None {
             title: String DEFAULT,
         };

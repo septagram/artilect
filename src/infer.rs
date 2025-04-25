@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use dioxus_lib::prelude::*;
 
 mod error;
 pub use error::InferError;
@@ -17,7 +17,7 @@ various isolated problems.";
 #[macro_export]
 macro_rules! prompt {
     ($($tokens:tt)*) => {
-        $crate::render_prompt(rsx! { $($tokens)* })
+        $crate::infer::render_prompt(rsx! { $($tokens)* })
     }
 }
 
@@ -159,9 +159,9 @@ pub fn IsContextLengthPrompt(error: String) -> Element {
 }
 
 pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
-    let system_prompt = crate::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})?;
+    let system_prompt = render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})?;
     Ok(
-        Box::pin(crate::infer_value::<YesNoReply>(&system_prompt, prompt! {
+        Box::pin(infer_value::<YesNoReply>(&system_prompt, prompt! {
             IsContextLengthPrompt {
                 error: error.to_string(),
             }

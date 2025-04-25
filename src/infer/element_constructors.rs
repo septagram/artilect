@@ -28,7 +28,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), None, false);
+        pub const $fil: $crate::infer::element_constructors::AttributeDescription = (stringify!($fil), None, false);
     };
 
     (
@@ -57,7 +57,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: $crate::element_constructors::AttributeDescription = ($name, None, false);
+        pub const $fil: $crate::infer::element_constructors::AttributeDescription = ($name, None, false);
     };
 
     (
@@ -86,7 +86,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), None, true);
+        pub const $fil: $crate::infer::element_constructors::AttributeDescription = (stringify!($fil), None, true);
     };
 
     (
@@ -115,7 +115,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), false)
+        pub const $fil: $crate::infer::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), false)
     };
 
     (
@@ -144,7 +144,7 @@ macro_rules! impl_attribute {
         ///     }
         /// };
         /// ```
-        pub const $fil: $crate::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), true)
+        pub const $fil: $crate::infer::element_constructors::AttributeDescription = (stringify!($fil), Some($ns), true)
     };
 }
 

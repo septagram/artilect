@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use chat_dto::User;
+use super::dto::User;
 
 mod components;
 mod handlers;
@@ -63,34 +63,25 @@ pub async fn serve(name: Box<str>, database_url: Box<str>, port: Option<u16>) {
         .await
         .expect("Failed to ensure Artilect user");
 
-    let system_prompt = infer::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
+    let system_prompt = crate::infer::render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})
         .expect("Failed to render system prompt");
 
     // Create shared state
     let actor = ChatService::new(pool, self_user, system_prompt).start();
     let state = Arc::new(actor.clone());
 
-    // Configure CORS
-    let cors = CorsLayer::new()
-        .allow_origin("*".parse::<HeaderValue>().unwrap())
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([http::header::AUTHORIZATION, http::header::CONTENT_TYPE]);
-
-    // Build router
-    let app = Router::new()
-        .route("/health", get(handlers::health_check))
-        .route("/chats", get(handlers::fetch_user_threads_handler))
-        .route("/chat/{thread_id}", get(handlers::fetch_thread_handler))
-        .route("/chat", post(handlers::chat_handler))
-        .layer(cors)
-        .with_state(state);
+    let router = handlers::build_router(state);
 
     // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], port.parse::<u16>().expect("Invalid PORT")));
-    tracing::info!("Starting server on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    if let Some(port) = port {
+        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        tracing::info!("Starting server on {}", addr);
+    
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    } else {
+        tracing::info!("Port not present, not starting the server.")
+    }
 }

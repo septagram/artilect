@@ -1,7 +1,7 @@
-use crate::openai::{OpenAIError, ApiError};
-use thiserror::Error;
+use super::openai::{ApiError, OpenAIError};
+use super::parsing::ParseError;
 use std::sync::Arc;
-use crate::parsing::ParseError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InferError {
@@ -18,8 +18,8 @@ pub enum InferError {
     ContextLengthError(Arc<str>),
 }
 
-impl From<dioxus_core::prelude::RenderError> for InferError {
-    fn from(err: dioxus_core::prelude::RenderError) -> Self {
+impl From<dioxus_lib::prelude::RenderError> for InferError {
+    fn from(err: dioxus_lib::prelude::RenderError) -> Self {
         InferError::RenderError(err.to_string())
     }
 }

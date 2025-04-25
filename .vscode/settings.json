@@ -1,6 +1,11 @@
 {
     "rust-analyzer.linkedProjects": [
-        "./actuators/chat/back/Cargo.toml",
-        "./actuators/chat/front/Cargo.toml"
-    ]
+        "./Cargo.toml",
+        "./macro/Cargo.toml"
+    ],
+    "rust-analyzer.cargo.features": [
+        "server-http2",
+        "chat-in",
+        "auth-out",
+    ],
 } 

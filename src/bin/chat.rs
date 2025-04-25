@@ -1,6 +1,8 @@
 #![feature(let_chains)]
 
-#[tokio::main]
+use std::env::VarError;
+
+#[actix::main]
 async fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
@@ -23,5 +25,5 @@ async fn main() {
         Err(err) => panic!("Failed to parse PORT: {}", err),
     };
 
-    chat_back::serve(name, database_url, port).await.unwrap();
+    artilect::actuators::chat::back::serve(name, database_url.into(), port).await;
 }

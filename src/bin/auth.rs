@@ -1,4 +1,7 @@
 #[tokio::main]
 async fn main() {
-    auth_back::serve().await.unwrap();
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
+    artilect::auth::back::serve().await.unwrap();
 }
