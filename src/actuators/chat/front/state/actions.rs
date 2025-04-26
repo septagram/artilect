@@ -5,8 +5,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{consume_sync_update_batch, State, SyncState};
-use crate::api;
-use chat_dto::{Message, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
+use crate::actuators::chat::front::api;
+use crate::actuators::chat::dto::{ChatMessage, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
 
 fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T>
 where
@@ -118,7 +118,7 @@ async fn handle_send_message(mut state: State, action: SendMessageAction) {
         });
     };
     let now = OffsetDateTime::now_utc();
-    let message = Message {
+    let message = ChatMessage {
         id: Uuid::new_v4(),
         thread_id,
         user_id: Some(*state.user_id.read()),

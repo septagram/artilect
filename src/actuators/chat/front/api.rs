@@ -1,12 +1,12 @@
-use chat_dto::{
-    FetchThreadResponse, FetchUserThreadsResponse, Message, SendMessageRequest, SendMessageResponse,
+use crate::actuators::chat::dto::{
+    FetchThreadResponse, FetchUserThreadsResponse, ChatMessage, SendMessageRequest, SendMessageResponse,
 };
 use reqwest::Client;
 use std::error::Error;
-use uuid::Uuid;
+use uuid::{Uuid, uuid};
 
 static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
-static USER_ID: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
+static USER_ID: Uuid = uuid!(dotenvy_macro::dotenv!("CHAT_USER_ID"));
 
 pub async fn fetch_user_threads() -> Result<FetchUserThreadsResponse, Box<dyn Error>> {
     let client = Client::new();
@@ -29,7 +29,7 @@ pub async fn fetch_thread(thread_id: Uuid) -> Result<FetchThreadResponse, Box<dy
 }
 
 pub async fn send_message(
-    message: &Message,
+    message: &ChatMessage,
     is_new_thread: bool,
 ) -> Result<SendMessageResponse, Box<dyn Error>> {
     let client = Client::new();
@@ -37,6 +37,7 @@ pub async fn send_message(
         .post(format!("{BASE_URL}/chat"))
         .header("Authorization", format!("Bearer {USER_ID}"))
         .json(&SendMessageRequest {
+            from_user_id: USER_ID,
             message: message.clone(),
             is_new_thread,
         })

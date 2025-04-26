@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build the release
-dx build -p chat-front --release --platform=desktop
+dx build --bin=chat-front --release --platform=desktop --features="chat-front chat-out auth-out"
 
 # Navigate to the release directory
 cd target/dx/chat-front/release/windows || exit 1

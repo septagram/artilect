@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub mod actions;
-use chat_dto::{Identifiable, Message, SyncUpdate, Thread};
+use crate::actuators::chat::dto::{ChatMessage, SyncUpdate, Thread};
+use crate::Identifiable;
 
 static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
 
 #[derive(Debug, Clone, Copy)]
 pub struct State {
     pub user_id: Signal<Uuid>,
-    pub messages: Signal<HashMap<Uuid, SyncState<Message>>>,
+    pub messages: Signal<HashMap<Uuid, SyncState<ChatMessage>>>,
     pub threads: Signal<HashMap<Uuid, SyncState<Thread>>>,
     pub thread_list: Signal<Vec<Uuid>>,
     pub thread_message_ids: Signal<HashMap<Uuid, Vec<Uuid>>>,

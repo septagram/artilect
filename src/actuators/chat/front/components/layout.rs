@@ -3,10 +3,9 @@ use uuid::Uuid;
 // use tokio::time::{sleep, Duration};
 
 use super::SidebarThreadLink;
-use crate::state::State;
-use crate::Route;
+use crate::actuators::chat::front::{state::State, Route};
 
-pub static CSS: Asset = asset!("/src/components/layout.css");
+pub static CSS: Asset = asset!("/src/actuators/chat/front/components/layout.css");
 
 #[component]
 pub fn Layout() -> Element {

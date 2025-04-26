@@ -72,10 +72,10 @@ infer = [
 ]
 auth-in = ["backend"]
 auth-out = ["client-http2"]
-auth-front = ["auth-out", "frontend"]
+auth-front = ["frontend"]
 chat-in = ["backend", "infer"]
 chat-out = ["client-http2"]
-chat-front = ["chat-out", "frontend"]
+chat-front = ["frontend"]
 
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop", "tao"]

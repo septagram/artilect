@@ -14,12 +14,8 @@ const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 const HEADER_SVG: Asset = asset!("/assets/header.svg");
 
-fn main() {
-    dioxus::launch(App);
-}
-
 #[component]
-fn App() -> Element {
+pub fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
@@ -28,7 +24,7 @@ fn App() -> Element {
 }
 
 #[component]
-pub fn Hero() -> Element {
+fn Hero() -> Element {
     rsx! {
         div {
             id: "hero",
@@ -50,13 +46,12 @@ pub fn Hero() -> Element {
 fn Home() -> Element {
     rsx! {
         Hero {}
-
     }
 }
 
 /// Blog page
 #[component]
-pub fn Blog(id: i32) -> Element {
+fn Blog(id: i32) -> Element {
     rsx! {
         div {
             id: "blog",

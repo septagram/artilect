@@ -22,24 +22,8 @@ enum Route {
 
 const FAVICON: Asset = asset!("/src/actuators/chat/front/assets/favicon.ico");
 
-fn main() {
-    dioxus::logger::init(Level::INFO).unwrap();
-    dioxus::LaunchBuilder::new()
-        .with_cfg(desktop!({
-            use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
-            use tao::window::Theme;
-            Config::new().with_menu(None).with_window(
-                WindowBuilder::default()
-                    .with_title("Artilect")
-                    .with_maximized(true)
-                    .with_theme(Some(Theme::Dark)),
-            )
-        }))
-        .launch(App);
-}
-
 #[component]
-fn App() -> Element {
+pub fn App() -> Element {
     state::use_app_state();
     state::actions::use_app_actions();
     let dispatch_fetch_user_threads = use_coroutine_handle::<FetchUserThreadsAction>();
