@@ -1,13 +1,19 @@
-use crate::{service, Authenticated, Identifiable};
+use crate::{service, Authenticated};
 use artilect_macro::Authenticated;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 #[cfg(feature = "backend")]
+#[allow(unused_imports)]
 use actix::Message;
 
 #[cfg(feature = "client")]
+#[allow(unused_imports)]
+use crate::Identifiable;
+
+#[cfg(feature = "client")]
+#[allow(unused_imports)]
 use artilect_macro::Identifiable;
 
 #[derive(Debug)]

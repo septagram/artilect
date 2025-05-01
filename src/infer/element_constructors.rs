@@ -342,7 +342,7 @@ macro_rules! builder_constructors {
         #[doc(hidden)]
         pub mod completions {
             /// This helper tells rust analyzer that it should autocomplete the element name with braces.
-            #[allow(non_camel_case_types)]
+            #[allow(non_camel_case_types, unused)]
             pub enum CompleteWithBraces {
                 $(
                     $(#[$attr])*

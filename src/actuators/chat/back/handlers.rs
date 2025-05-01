@@ -1,31 +1,23 @@
 use actix::prelude::*;
 use axum::{
+    Json, Router,
     extract::{Path, State},
-    http::{HeaderValue, Method, StatusCode},
-    response::IntoResponse,
+    http::{HeaderValue, Method},
     routing::{get, post},
-    Router,
-    Json,
 };
 use axum_extra::TypedHeader;
-use dioxus_lib::prelude::*;
 use headers::authorization::{Authorization, Bearer};
-use tower_http::cors::CorsLayer;
-use crate::infer::{PlainText, infer_value};
-use serde_json::json;
-use sqlx::PgPool;
-use std::ops::Deref;
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use uuid::Uuid;
-use crate::service;
 
-// use crate::auth::dto::{Authenticated, Identity};
+use crate::service;
 use crate::actuators::chat::dto::{
-    FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse, ChatMessage, OneToManyChild, OneToManyUpdate,
-    SendMessageRequest, SendMessageResponse, SyncUpdate, Thread, User,
+    FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
+    SendMessageRequest, SendMessageResponse,
 };
 
-use super::{actor::ChatService, components::message_log::MessageLogItem, components::MessageLog};
+use super::actor::ChatService;
 
 pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
     // Configure CORS

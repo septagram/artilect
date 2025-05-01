@@ -1,16 +1,8 @@
-#![feature(let_chains)]
-
 use actix::Actor;
-use axum::{
-    http::{HeaderValue, Method},
-    routing::{get, post},
-    Router,
-};
 use dioxus_lib::prelude::*;
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
 use super::dto::User;

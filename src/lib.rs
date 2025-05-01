@@ -1,6 +1,5 @@
-#![feature(str_as_str)]
+#![feature(let_chains, str_as_str)]
 
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod actuators;

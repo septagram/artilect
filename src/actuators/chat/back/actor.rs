@@ -1,23 +1,21 @@
-use crate::service;
-use artilect_macro::message_handler;
-use actix::prelude::*; //{Actor, Context};
-use sqlx::PgPool;
+use std::{ops::Deref, sync::Arc};
 
+use actix::prelude::*;
+use artilect_macro::message_handler;
 use dioxus_lib::prelude::*;
-use headers::authorization::{Authorization, Bearer};
-use crate::infer::{PlainText, infer_value};
-use serde_json::json;
-use std::ops::Deref;
-use std::sync::Arc;
+use sqlx::PgPool;
 use uuid::Uuid;
 
-// use crate::auth::dto::{Authenticated, Identity};
-use crate::actuators::chat::dto::{
-    FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse, ChatMessage, OneToManyChild, OneToManyUpdate,
-    SendMessageRequest, SendMessageResponse, SyncUpdate, Thread, User,
+use super::components::{MessageLog, message_log::MessageLogItem};
+use crate::{
+    actuators::chat::dto::{
+        ChatMessage, FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
+        FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
+        SendMessageResponse, SyncUpdate, Thread, User,
+    },
+    infer::{PlainText, infer_value},
+    service,
 };
-
-use super::{components::message_log::MessageLogItem, components::MessageLog};
 
 pub struct State {
     pool: PgPool,
@@ -291,7 +289,7 @@ async fn respond_to_thread(
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
     let thread = fetch_thread(&state, thread_id).await?;
-    let messages = sqlx::query_as!(
+    let mut messages = sqlx::query_as!(
         MessageLogItem,
         r#"--sql
             SELECT users.name AS user_name, messages.content, messages.created_at
@@ -305,6 +303,10 @@ async fn respond_to_thread(
         .fetch_all(&state.pool)
         .await
         .map_err(|_| service::Error::Internal)?;
+
+    for msg in &mut messages {
+        msg.created_at = msg.created_at.to_offset(timezone);
+    }
 
     let inference = infer_value::<PlainText>(
         &state.system_prompt,

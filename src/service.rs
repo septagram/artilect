@@ -23,7 +23,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(feature = "backend")]
 impl From<actix::MailboxError> for Error {
-    fn from(error: actix::MailboxError) -> Self {
+    fn from(_: actix::MailboxError) -> Self {
         Error::ServiceUnavailable
     }
 }

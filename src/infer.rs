@@ -1,15 +1,17 @@
 use dioxus_lib::prelude::*;
 
+pub use components::SystemPrompt;
+pub mod element_constructors;
+
 mod error;
 pub use error::InferError;
 mod components;
-pub use components::SystemPrompt;
-pub mod element_constructors;
 mod openai;
 use openai::{ApiError, OpenAIMessage};
 mod parsing;
-pub use parsing::{FromLlmReply, ParseError, PlainText, WithReasoning, YesNoReply};
 use std::sync::Arc;
+
+pub use parsing::{FromLlmReply, ParseError, PlainText, WithReasoning, YesNoReply};
 const AGENT_PROMPT_TEXT: &str = "You are the inference agent. \
 You are responsible for assisting other agents by solving \
 various isolated problems.";
