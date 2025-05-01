@@ -23,7 +23,7 @@ license.workspace = true
 keywords.workspace = true
 
 [features]
-backend = ["dep:sqlx"]
+backend = ["dep:sqlx", "actix", "tokio"]
 server-http2 = [
     "backend",
     "dep:axum",
@@ -33,42 +33,22 @@ server-http2 = [
     "dep:headers",
     "dep:tower-http",
 ]
-client-http2 = ["dep:reqwest"]
+client = []
+client-http2 = ["client", "dep:reqwest"]
 frontend = [
+    "dioxus",
+    "dioxus/router",
     "client-http2",
     "dep:classnames",
     "dep:futures-util",
     "dep:dotenvy_macro",
     "time/wasm-bindgen",
-    "dioxus/router",
-
-    # Dioxus default features
-    # "dep:dioxus/asset",
-    # "dep:dioxus/cli-config",
-    # "dep:dioxus/devtools",
-    # "dep:dioxus/document",
-    # "dep:dioxus/file_engine",
-    # "dep:dioxus/hooks",
-    # "dep:dioxus/html",
-    # "dep:dioxus/launch",
-    # "dep:dioxus/logger",
-    # "dep:dioxus/macro",
-    # "dep:dioxus/mounted",
-    # "dep:dioxus/signals",
-    # "dep:dioxus/warnings",
 ]
 infer = [
     "dep:dioxus-lib",
     "dep:dioxus-ssr",
     "dep:dioxus-html-internal-macro",
     "dep:xmltree",
-
-    # @note: use dioxus-lib instead?
-    # "dep:dioxus_core",
-    # "dep:dioxus_core_macro",
-    # "dep:dioxus_ssr",
-    # "dep:dioxus_html_internal_macro",
-    # "dep:xmltree",
 ]
 auth-in = ["backend"]
 auth-out = ["client-http2"]
@@ -83,8 +63,6 @@ mobile = ["dioxus/mobile"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
-actix = { version = "0.13.5" }
-tokio = { version = "1.43", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 uuid = { version = "1.13", features = ["v4", "serde", "js", "fast-rng"] }
@@ -99,14 +77,14 @@ tracing-subscriber = { version = "0.3" }
 dotenvy = { version = "0.15" }
 thiserror = { version = "2.0" }
 
+tokio = { version = "1.43", features = ["full"], optional = true }
+actix = { version = "0.13.5", optional = true }
 dioxus = { version = "0.6", optional = true }
 dioxus-lib = { version = "0.6", optional = true }
 dioxus-ssr = { version = "0.6", optional = true }
-# dioxus-html = { version = "0.6", optional = true }
 dioxus-core = { version = "0.6", optional = true }
 dioxus-core-macro = { version = "0.6", optional = true }
 dioxus-html-internal-macro = { version = "0.6", optional = true }
-# dioxus-logger = { version = "0.6", optional = true }
 futures-util = { version = "0.3", optional = true }
 classnames = { version = "2.1", optional = true }
 # getrandom = { version = "0.2", optional = true, features = ["js"] }

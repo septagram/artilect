@@ -21,6 +21,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[cfg(feature = "backend")]
 impl From<actix::MailboxError> for Error {
     fn from(error: actix::MailboxError) -> Self {
         Error::ServiceUnavailable
@@ -55,28 +56,28 @@ impl axum::response::IntoResponse for Error {
     }
 }
 
-#[cfg(feature = "client-http2")]
-impl From<reqwest::Error> for Error {
-    fn from(error: reqwest::Error) -> Self {
-        if error.is_connect() {
-            Error::ServiceUnavailable
-        } else if let Some(status) = error.status() {
-            match status.as_u16() {
-                // 400 => ServiceError::BadRequest(error.json::<serde_json::Value>().await.map_or_else(
-                //     |_| error.to_string().into(),
-                //     |json| json.get("error").and_then(|e| e.as_str()).unwrap_or_default().into()
-                // )),
-                400 => Error::BadRequest(Box::from("(parsing not implemented)")),
-                401 => Error::Unauthorized,
-                403 => Error::Forbidden,
-                404 => Error::NotFound,
-                500 => Error::Internal,
-                501 => Error::NotImplemented,
-                503 => Error::ServiceUnavailable,
-                _ => Error::InvalidResponse
-            }
-        } else {
-            Error::InvalidResponse
-        }
-    }
-}
+// #[cfg(feature = "client-http2")]
+// impl From<reqwest::Error> for Error {
+//     fn from(error: reqwest::Error) -> Self {
+//         if error.is_connect() {
+//             Error::ServiceUnavailable
+//         } else if let Some(status) = error.status() {
+//             match status.as_u16() {
+//                 // 400 => ServiceError::BadRequest(error.json::<serde_json::Value>().await.map_or_else(
+//                 //     |_| error.to_string().into(),
+//                 //     |json| json.get("error").and_then(|e| e.as_str()).unwrap_or_default().into()
+//                 // )),
+//                 400 => Error::BadRequest(Box::from("(parsing not implemented)")),
+//                 401 => Error::Unauthorized,
+//                 403 => Error::Forbidden,
+//                 404 => Error::NotFound,
+//                 500 => Error::Internal,
+//                 501 => Error::NotImplemented,
+//                 503 => Error::ServiceUnavailable,
+//                 _ => Error::InvalidResponse
+//             }
+//         } else {
+//             Error::InvalidResponse
+//         }
+//     }
+// }

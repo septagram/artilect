@@ -1,48 +1,50 @@
 use crate::{service, Authenticated, Identifiable};
-use actix::Message;
 use artilect_macro::Authenticated;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-#[cfg(feature = "frontend")]
+#[cfg(feature = "backend")]
+use actix::Message;
+
+#[cfg(feature = "client")]
 use artilect_macro::Identifiable;
 
 #[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
+#[cfg_attr(feature = "chat-in", derive(Serialize))]
+#[cfg_attr(feature = "chat-out", derive(Deserialize))]
 pub enum SyncUpdate<T> {
     Updated(T),
     Deleted(Uuid),
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
+#[cfg_attr(feature = "chat-in", derive(Serialize))]
+#[cfg_attr(feature = "chat-out", derive(Deserialize))]
 pub enum OneToManyChild<T> {
     Id(Uuid),
     Value(T),
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
+#[cfg_attr(feature = "chat-in", derive(Serialize))]
+#[cfg_attr(feature = "chat-out", derive(Deserialize))]
 pub struct OneToManyUpdate<T> {
     pub owner_id: Uuid,
     pub children: Vec<OneToManyChild<T>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
-#[cfg_attr(feature = "frontend", derive(PartialEq, Identifiable))]
+#[cfg_attr(feature = "chat-in", derive(sqlx::FromRow))]
+#[cfg_attr(feature = "chat-out", derive(PartialEq, Identifiable))]
 pub struct User {
     pub id: Uuid,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
-#[cfg_attr(feature = "frontend", derive(Identifiable))]
+#[cfg_attr(feature = "chat-in", derive(sqlx::FromRow))]
+#[cfg_attr(feature = "chat-out", derive(Identifiable))]
 pub struct Thread {
     pub id: Uuid,
     pub name: Option<String>,
@@ -54,8 +56,8 @@ pub struct Thread {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "frontend", derive(PartialEq, Identifiable))]
-#[cfg_attr(feature = "backend", derive(sqlx::FromRow))]
+#[cfg_attr(feature = "chat-out", derive(PartialEq, Identifiable))]
+#[cfg_attr(feature = "chat-in", derive(sqlx::FromRow))]
 pub struct ChatMessage {
     pub id: Uuid,
     pub thread_id: Uuid,
@@ -68,42 +70,45 @@ pub struct ChatMessage {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
+#[cfg_attr(feature = "chat-in", derive(Serialize))]
+#[cfg_attr(feature = "chat-out", derive(Deserialize))]
 pub struct FetchUserThreadsResponse {
     pub users: Vec<SyncUpdate<User>>,
     pub user_threads: Vec<OneToManyUpdate<Thread>>,
 }
 
-#[derive(Debug, Authenticated, Message)]
-#[rtype(result = "service::Result<FetchUserThreadsResponse>")]
-#[cfg_attr(feature = "backend", derive(Deserialize))]
-#[cfg_attr(feature = "frontend", derive(Serialize))]
+#[derive(Debug, Authenticated)]
+#[cfg_attr(feature = "chat-in", derive(Message))]
+#[cfg_attr(feature = "chat-in", rtype(result = "service::Result<FetchUserThreadsResponse>"))]
+#[cfg_attr(feature = "chat-in", derive(Deserialize))]
+#[cfg_attr(feature = "chat-out", derive(Serialize))]
 pub struct FetchUserThreadsRequest {
     pub from_user_id: Uuid,
 }
 
-#[derive(Debug, Authenticated, Message)]
-#[rtype(result = "service::Result<FetchThreadResponse>")]
-#[cfg_attr(feature = "backend", derive(Deserialize))]
-#[cfg_attr(feature = "frontend", derive(Serialize))]
+#[derive(Debug, Authenticated)]
+#[cfg_attr(feature = "chat-in", derive(Message))]
+#[cfg_attr(feature = "chat-in", rtype(result = "service::Result<FetchThreadResponse>"))]
+#[cfg_attr(feature = "chat-in", derive(Deserialize))]
+#[cfg_attr(feature = "chat-out", derive(Serialize))]
 pub struct FetchThreadRequest {
     pub from_user_id: Uuid,
     pub thread_id: Uuid,
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "backend", derive(Serialize))]
-#[cfg_attr(feature = "frontend", derive(Deserialize))]
+#[cfg_attr(feature = "chat-in", derive(Serialize))]
+#[cfg_attr(feature = "chat-out", derive(Deserialize))]
 pub struct FetchThreadResponse {
     pub threads: Vec<SyncUpdate<Thread>>,
     pub thread_messages: Vec<OneToManyUpdate<ChatMessage>>,
 }
 
-#[derive(Debug, Authenticated, Message)]
-#[rtype(result = "service::Result<SendMessageResponse>")]
-#[cfg_attr(feature = "backend", derive(Deserialize))]
-#[cfg_attr(feature = "frontend", derive(Serialize))]
+#[derive(Debug, Authenticated)]
+#[cfg_attr(feature = "chat-in", derive(Message))]
+#[cfg_attr(feature = "chat-in", rtype(result = "service::Result<SendMessageResponse>"))]
+#[cfg_attr(feature = "chat-in", derive(Deserialize))]
+#[cfg_attr(feature = "chat-out", derive(Serialize))]
 pub struct SendMessageRequest {
     pub from_user_id: Uuid,
     pub message: ChatMessage,
