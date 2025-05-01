@@ -1,4 +1,8 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+#[cfg(feature = "backend")]
+#[allow(unused_imports)]
+use serde::Serialize;
 
 pub enum ServiceType {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]

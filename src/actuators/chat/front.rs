@@ -1,6 +1,4 @@
-#![feature(let_chains)]
-
-use dioxus::logger::tracing::{info, Level};
+use dioxus::logger::tracing::info;
 use dioxus::prelude::*;
 use uuid::Uuid;
 
