@@ -11,11 +11,11 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::service;
 use crate::actuators::chat::dto::{
     FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
     SendMessageRequest, SendMessageResponse,
 };
+use crate::service;
 
 use super::actor::ChatService;
 
@@ -35,13 +35,22 @@ pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
         .with_state(state)
 }
 
-fn map_service_response<T>(actix_response: Result<service::Result<T>, MailboxError>) -> service::Result<Json<T>> { //Result<Json<T>, StatusCode> {
+fn map_service_response<T>(
+    actix_response: Result<service::Result<T>, MailboxError>,
+) -> service::Result<Json<T>> {
+    //Result<Json<T>, StatusCode> {
     match actix_response {
         Ok(service_response) => match service_response {
             Ok(response) => Ok(Json(response)),
-            Err(error) => Err(error),
-        }
-        Err(_) => Err(service::Error::ServiceUnavailable),
+            Err(error) => {
+                tracing::error!("Service error: {:?}", error);
+                Err(error)
+            },
+        },
+        Err(err) => {
+            tracing::error!("Mailbox error: {:?}", err);
+            Err(service::Error::ServiceUnavailable)
+        },
     }
 }
 

@@ -1,3 +1,5 @@
+use std::backtrace::Backtrace;
+
 use serde::Deserialize;
 
 #[cfg(feature = "backend")]
@@ -11,16 +13,28 @@ pub enum ServiceType {
     ChatActuator,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Bad Request: {0}")]
     BadRequest(Box<str>),
+    #[error("Unauthorized")]
     Unauthorized,
+    #[error("Forbidden")]
     Forbidden,
+    #[error("Not Found")]
     NotFound,
-    Internal,
-    NotImplemented,
+    #[error("Service Unavailable")]
     ServiceUnavailable,
+    #[error("Invalid Response")]
     InvalidResponse,
+    #[error("Not Implemented")]
+    NotImplemented,
+    #[error("{source:?} {backtrace}")]
+    Internal {
+        #[from]
+        source: anyhow::Error,
+        backtrace: Backtrace,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -47,7 +61,7 @@ impl axum::response::IntoResponse for Error {
             Error::Unauthorized => (axum::http::StatusCode::UNAUTHORIZED, None),
             Error::Forbidden => (axum::http::StatusCode::FORBIDDEN, None),
             Error::NotFound => (axum::http::StatusCode::NOT_FOUND, None),
-            Error::Internal => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
+            Error::Internal { source: _, backtrace: _ } => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::InvalidResponse => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::NotImplemented => (axum::http::StatusCode::NOT_IMPLEMENTED, None),
             Error::ServiceUnavailable => (axum::http::StatusCode::SERVICE_UNAVAILABLE, None),

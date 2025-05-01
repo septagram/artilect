@@ -102,8 +102,8 @@ async fn create_thread(
     pool: &PgPool,
     user_id: Uuid,
     thread_id: Uuid,
-) -> service::Result<Thread> {
-    let mut tx = pool.begin().await.map_err(|_| service::Error::Internal)?;
+) -> anyhow::Result<Thread> {
+    let mut tx = pool.begin().await?;
 
     // Create the thread
     let thread = sqlx::query_as!(
@@ -117,8 +117,7 @@ async fn create_thread(
         user_id,
     )
         .fetch_one(&mut *tx)
-        .await
-        .map_err(|_| service::Error::Internal)?;
+        .await?;
 
     // Add both users as participants
     sqlx::query!(
@@ -131,10 +130,9 @@ async fn create_thread(
         Uuid::nil(),
     )
         .execute(&mut *tx)
-        .await
-        .map_err(|_| service::Error::Internal)?;
+        .await?;
 
-    tx.commit().await.map_err(|_| service::Error::Internal)?;
+    tx.commit().await?;
     Ok(thread)
 }
 
@@ -145,7 +143,7 @@ async fn create_message(
     message_id: Option<Uuid>,
     message: &str,
 ) -> service::Result<(ChatMessage, Thread)> {
-    let mut tx = pool.begin().await.map_err(|_| service::Error::Internal)?;
+    let mut tx = pool.begin().await.map_err(|e| anyhow::Error::from(e))?;
     let is_allowed_to_create_message = match user_id {
         Some(user_id) => sqlx::query!(
             r#"--sql
@@ -158,8 +156,7 @@ async fn create_message(
             user_id,
         )
             .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| service::Error::Internal)?
+            .await.map_err(|e| anyhow::Error::from(e))?
             .exists
             .unwrap_or(false),
         None => true,
@@ -184,7 +181,7 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .map_err(|_| service::Error::Internal)?;
+        .map_err(|e| anyhow::Error::from(e))?;
 
     let thread = sqlx::query_as!(
         Thread,
@@ -197,16 +194,16 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .map_err(|_| service::Error::Internal)?;
+        .map_err(|e| anyhow::Error::from(e))?;
 
-    tx.commit().await.map_err(|_| service::Error::Internal)?;
+    tx.commit().await.map_err(|e| anyhow::Error::from(e))?;
     Ok((message, thread))
 }
 
 async fn generate_thread_name(
     state: &State,
     thread_id: Uuid,
-) -> service::Result<Thread> {
+) -> anyhow::Result<Thread> {
     let messages = sqlx::query_as!(
         MessageLogItem,
         r#"--sql
@@ -236,7 +233,7 @@ async fn generate_thread_name(
                 "The title should be in the same language as the most messages are."
             }
         }
-            .map_err(|_| service::Error::Internal)?,
+            .map_err(|e| anyhow::Error::from(e))?,
     )
     .await;
 
@@ -252,8 +249,7 @@ async fn generate_thread_name(
                 thread_id,
             )
                 .fetch_one(&state.pool)
-                .await
-                .map_err(|_| service::Error::Internal)?
+                .await?
         }
         Err(e) => {
             create_message(&state.pool, None, thread_id, None, &e.to_string()).await?;
@@ -285,7 +281,7 @@ async fn get_thread_message_ids(
 async fn respond_to_thread(
     state: &State,
     thread_id: Uuid,
-) -> service::Result<(ChatMessage, Thread)> {
+) -> anyhow::Result<(ChatMessage, Thread)> {
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
     let thread = fetch_thread(&state, thread_id).await?;
@@ -301,8 +297,7 @@ async fn respond_to_thread(
         thread_id,
     )
         .fetch_all(&state.pool)
-        .await
-        .map_err(|_| service::Error::Internal)?;
+        .await?;
 
     for msg in &mut messages {
         msg.created_at = msg.created_at.to_offset(timezone);
@@ -320,8 +315,7 @@ async fn respond_to_thread(
                 "Note to respond in the language the user requested, or in the language of the last user message. ",
                 "Respond with just the content, no quotes or extra text."
             }
-        }
-            .map_err(|_| service::Error::Internal)?
+        }?
     ).await;
 
     match inference {
@@ -414,7 +408,7 @@ async fn fetch_thread_messages(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|_| service::Error::Internal)?;
+        .map_err(|e| anyhow::Error::from(e))?;
 
     Ok(FetchThreadResponse {
         threads: vec![SyncUpdate::Updated(thread)],
