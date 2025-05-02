@@ -1,5 +1,3 @@
-use std::backtrace::Backtrace;
-
 use serde::Deserialize;
 
 #[cfg(feature = "backend")]
@@ -29,12 +27,8 @@ pub enum Error {
     InvalidResponse,
     #[error("Not Implemented")]
     NotImplemented,
-    #[error("{source:?} {backtrace}")]
-    Internal {
-        #[from]
-        source: anyhow::Error,
-        backtrace: Backtrace,
-    },
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -61,7 +55,7 @@ impl axum::response::IntoResponse for Error {
             Error::Unauthorized => (axum::http::StatusCode::UNAUTHORIZED, None),
             Error::Forbidden => (axum::http::StatusCode::FORBIDDEN, None),
             Error::NotFound => (axum::http::StatusCode::NOT_FOUND, None),
-            Error::Internal { source: _, backtrace: _ } => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
+            Error::Internal(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::InvalidResponse => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::NotImplemented => (axum::http::StatusCode::NOT_IMPLEMENTED, None),
             Error::ServiceUnavailable => (axum::http::StatusCode::SERVICE_UNAVAILABLE, None),
