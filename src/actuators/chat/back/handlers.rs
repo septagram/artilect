@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix::prelude::*;
 use axum::{
     Json, Router,
@@ -7,19 +9,20 @@ use axum::{
 };
 use axum_extra::TypedHeader;
 use headers::authorization::{Authorization, Bearer};
-use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::actuators::chat::dto::{
-    FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
-    SendMessageRequest, SendMessageResponse,
+use super::{actor::ChatService, client::ChatClientTrait};
+use crate::{
+    actuators::chat::dto::{
+        FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
+        SendMessageRequest, SendMessageResponse,
+    },
+    service,
+    service::ActixResult,
 };
-use crate::service;
 
-use super::actor::ChatService;
-
-pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
+pub fn build_router<T: ChatClientTrait + Send + Sync>(state: Arc<T>) -> Router {
     // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin("*".parse::<HeaderValue>().unwrap())
@@ -35,51 +38,62 @@ pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
         .with_state(state)
 }
 
-fn map_service_response<T>(
-    actix_response: Result<service::Result<T>, MailboxError>,
-) -> service::Result<Json<T>> {
-    //Result<Json<T>, StatusCode> {
-    match actix_response {
-        Ok(service_response) => match service_response {
-            Ok(response) => Ok(Json(response)),
-            Err(error) => {
-                tracing::error!("Service error: {:?}", error);
-                Err(error)
-            },
-        },
-        Err(err) => {
-            tracing::error!("Mailbox error: {:?}", err);
-            Err(service::Error::ServiceUnavailable)
-        },
-    }
-}
+// fn map_service_response<T>(
+//     actix_response: Result<service::Result<T>, MailboxError>,
+// ) -> service::Result<Json<T>> {
+//     match actix_response {
+//         Ok(service_response) => match service_response {
+//             Ok(response) => Ok(Json(response)),
+//             Err(error) => {
+//                 tracing::error!("Service error: {:?}", error);
+//                 Err(error)
+//             },
+//         },
+//         Err(err) => {
+//             tracing::error!("Mailbox error: {:?}", err);
+//             Err(service::Error::ServiceUnavailable)
+//         },
+//     }
+// }
 
-pub async fn fetch_user_threads_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+pub async fn fetch_user_threads_handler<T: ChatClientTrait>(
+    State(service): State<Arc<T>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
 ) -> service::Result<Json<FetchUserThreadsResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    map_service_response(service.send(FetchUserThreadsRequest { from_user_id }).await)
+    let from_user_id =
+        Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    service
+        .fetch_user_threads(FetchUserThreadsRequest { from_user_id })
+        .await
+        .map(|response| Json(response))
 }
 
-pub async fn fetch_thread_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+pub async fn fetch_thread_handler<T: ChatClientTrait>(
+    State(service): State<Arc<T>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Path(thread_id): Path<Uuid>,
 ) -> service::Result<Json<FetchThreadResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    map_service_response(service.send(FetchThreadRequest { from_user_id, thread_id }).await)
+    let from_user_id =
+        Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    service
+        .fetch_thread_messages(FetchThreadRequest {
+            from_user_id,
+            thread_id,
+        })
+        .await
+        .map(|response| Json(response))
 }
 
-pub async fn chat_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+pub async fn chat_handler<T: ChatClientTrait>(
+    State(service): State<Arc<T>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(request): Json<SendMessageRequest>,
 ) -> service::Result<Json<SendMessageResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    let from_user_id =
+        Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
     if from_user_id != request.from_user_id {
         Err(service::Error::Unauthorized)
     } else {
-        map_service_response(service.send(request).await)
+        service.chat(request).await.map(|response| Json(response))
     }
 }

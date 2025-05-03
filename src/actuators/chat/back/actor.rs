@@ -37,9 +37,7 @@ impl ChatService {
     }
 }
 
-impl Actor for ChatService {
-    type Context = actix::Context<Self>;
-}
+impl Supervised for ChatService {}
 
 async fn fetch_thread(
     state: &State,
