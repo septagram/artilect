@@ -33,6 +33,19 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+pub trait CoercibleResult<T> {
+    fn into_service_result(self: Self) -> Result<T>;
+}
+
+impl<T, E> CoercibleResult<T> for std::result::Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn into_service_result(self: Self) -> Result<T> {
+        self.map_err(|e| anyhow::Error::from(e).into())
+    }
+}
+
 #[cfg(feature = "backend")]
 impl From<actix::MailboxError> for Error {
     fn from(_: actix::MailboxError) -> Self {

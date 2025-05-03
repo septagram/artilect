@@ -13,8 +13,8 @@ use crate::{
         FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
         SendMessageResponse, SyncUpdate, Thread, User,
     },
-    infer::{PlainText, infer_value},
-    service,
+    infer::{infer_value, PlainText},
+    service::{self, CoercibleResult},
 };
 
 pub struct State {
@@ -143,7 +143,7 @@ async fn create_message(
     message_id: Option<Uuid>,
     message: &str,
 ) -> service::Result<(ChatMessage, Thread)> {
-    let mut tx = pool.begin().await.map_err(|e| anyhow::Error::from(e))?;
+    let mut tx = pool.begin().await.into_service_result()?;
     let is_allowed_to_create_message = match user_id {
         Some(user_id) => sqlx::query!(
             r#"--sql
@@ -156,7 +156,7 @@ async fn create_message(
             user_id,
         )
             .fetch_one(&mut *tx)
-            .await.map_err(|e| anyhow::Error::from(e))?
+            .await.into_service_result()?
             .exists
             .unwrap_or(false),
         None => true,
@@ -181,7 +181,7 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| anyhow::Error::from(e))?;
+        .into_service_result()?;
 
     let thread = sqlx::query_as!(
         Thread,
@@ -194,9 +194,9 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| anyhow::Error::from(e))?;
+        .into_service_result()?;
 
-    tx.commit().await.map_err(|e| anyhow::Error::from(e))?;
+    tx.commit().await.into_service_result()?;
     Ok((message, thread))
 }
 
@@ -233,7 +233,7 @@ async fn generate_thread_name(
                 "The title should be in the same language as the most messages are."
             }
         }
-            .map_err(|e| anyhow::Error::from(e))?,
+            .into_service_result()?,
     )
     .await;
 
@@ -408,7 +408,7 @@ async fn fetch_thread_messages(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|e| anyhow::Error::from(e))?;
+        .into_service_result()?;
 
     Ok(FetchThreadResponse {
         threads: vec![SyncUpdate::Updated(thread)],
