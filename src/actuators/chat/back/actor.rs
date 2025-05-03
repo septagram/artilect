@@ -242,7 +242,13 @@ async fn generate_thread_name(
             sqlx::query_as!(
                 Thread,
                 r#"--sql
-                UPDATE threads SET name = $1 WHERE id = $2
+                UPDATE threads SET name = 
+                    CASE
+                        WHEN char_length($1) > 255 THEN 
+                            LEFT($1, 254) || '…'
+                        ELSE $1
+                    END
+                WHERE id = $2
                 RETURNING id, name, owner_id, created_at, updated_at
                 "#,
                 content.deref(),
