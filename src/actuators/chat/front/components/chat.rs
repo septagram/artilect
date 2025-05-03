@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use super::ChatMessage;
 use crate::actuators::chat::front::state::{
+    State, SyncState,
     actions::{FetchThreadAction, SendMessageAction},
-    State,
 };
 
 pub static CSS: Asset = asset!("/src/actuators/chat/front/components/chat.css");
@@ -16,9 +16,19 @@ pub fn Chat(thread_id: Option<Uuid>) -> Element {
     let navigator = use_navigator();
     let dispatch_send_message = use_coroutine_handle::<SendMessageAction>();
     let dispatch_fetch_thread = use_coroutine_handle::<FetchThreadAction>();
+    let is_synced_thread = {
+        if let Some(thread_id) = thread_id
+            && let Some(thread_sync_state) = state.threads.read().get(&thread_id)
+            && !matches!(thread_sync_state, SyncState::Saving(_, _))
+        {
+            true
+        } else {
+            false
+        }
+    };
 
-    use_effect(use_reactive!(|thread_id| {
-        if let Some(thread_id) = thread_id {
+    use_effect(use_reactive!(|thread_id, is_synced_thread| {
+        if is_synced_thread && let Some(thread_id) = thread_id {
             dispatch_fetch_thread.send(thread_id);
         }
     }));
