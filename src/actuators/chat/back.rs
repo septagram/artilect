@@ -10,6 +10,7 @@ use super::dto::User;
 mod components;
 mod handlers;
 mod actor;
+pub mod client;
 
 use actor::ChatService;
 
@@ -34,7 +35,7 @@ async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User, sql
             SET name = $2
             RETURNING id, name
         "#,
-        artilect_id,
+        artilect_id, 
         name.as_str(),
     )
     .fetch_one(pool)
@@ -60,7 +61,7 @@ pub async fn serve(name: Box<str>, database_url: Box<str>, port: Option<u16>) {
 
     // Create shared state
     let actor = ChatService::new(pool, self_user, system_prompt).start();
-    let state = Arc::new(actor.clone());
+    let state = Arc::new(client::local::ChatClient::new(actor));
 
     let router = handlers::build_router(state);
 

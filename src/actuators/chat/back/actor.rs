@@ -57,6 +57,8 @@ impl ChatService {
     }
 }
 
+impl Supervised for ChatService {}
+
 async fn fetch_thread(
     state: &State,
     thread_id: Uuid,
