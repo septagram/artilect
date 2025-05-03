@@ -221,6 +221,7 @@ async fn generate_thread_name(
         .map_err(|_| service::Error::NotFound)?;
 
     let inference = infer_value::<PlainText>(
+        true,
         &state.system_prompt,
         crate::prompt! {
             MessageLog {
@@ -310,6 +311,7 @@ async fn respond_to_thread(
     }
 
     let inference = infer_value::<PlainText>(
+        false,
         &state.system_prompt,
         crate::prompt! {
             MessageLog {

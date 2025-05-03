@@ -66,13 +66,16 @@ pub fn render_system_prompt(agent_system_prompt: &Element) -> Result<String, Inf
     }
 }
 
-pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Result<T, InferError> {
+pub async fn infer<T: FromLlmReply>(auto_reasoning: bool, system_prompt: &str, mut prompt: String) -> Result<T, InferError> {
     let model = std::env::var("DEFAULT_MODEL").unwrap_or_else(|_| "default".to_string());
     let infer_url = std::env::var("INFER_URL").unwrap_or_else(|_| "http://infer".to_string());
     let model_use_system_prompt = std::env::var("MODEL_USE_SYSTEM_PROMPT")
         .unwrap_or_else(|_| "true".to_string())
         .parse::<bool>()
         .expect("MODEL_USE_SYSTEM_PROMPT must be 'true' or 'false'");
+    let think_on_postfix = std::env::var("MODEL_THINK_ON_POSTFIX").unwrap_or_else(|_| "".to_string());
+    let think_off_postfix = std::env::var("MODEL_THINK_OFF_POSTFIX").unwrap_or_else(|_| "".to_string());
+    prompt.push_str(if auto_reasoning { &think_on_postfix } else { &think_off_postfix });
     let messages = if model_use_system_prompt {
         vec![
             OpenAIMessage {
@@ -113,6 +116,7 @@ pub async fn infer<T: FromLlmReply>(system_prompt: &str, prompt: String) -> Resu
 }
 
 pub async fn infer_value<T: FromLlmReply>(
+    auto_reasoning: bool,
     system_prompt: &str,
     prompt: String,
 ) -> Result<T, InferError> {
@@ -121,11 +125,11 @@ pub async fn infer_value<T: FromLlmReply>(
         .parse::<bool>()
         .expect("MODEL_HAS_REASONING must be 'true' or 'false'");
     if model_has_reasoning {
-        infer::<WithReasoning<T>>(system_prompt, prompt)
+        infer::<WithReasoning<T>>(auto_reasoning, system_prompt, prompt)
             .await
             .map(|wr| wr.reply)
     } else {
-        infer::<T>(system_prompt, prompt).await
+        infer::<T>(auto_reasoning, system_prompt, prompt).await
     }
 }
 
@@ -163,7 +167,7 @@ pub fn IsContextLengthPrompt(error: String) -> Element {
 pub async fn is_context_length_error(error: &str) -> Result<bool, InferError> {
     let system_prompt = render_system_prompt(&rsx! {{AGENT_PROMPT_TEXT}})?;
     Ok(
-        Box::pin(infer_value::<YesNoReply>(&system_prompt, prompt! {
+        Box::pin(infer_value::<YesNoReply>(false, &system_prompt, prompt! {
             IsContextLengthPrompt {
                 error: error.to_string(),
             }
