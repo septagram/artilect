@@ -1,5 +1,11 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+pub const ROLE_SYSTEM: &str = "system";
+pub const ROLE_USER: &str = "user";
+pub const ROLE_ASSISTANT: &str = "assistant";
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -20,15 +26,20 @@ impl From<OpenAIError> for ApiError {
 }
 
 #[derive(Debug, Serialize)]
-pub struct OpenAIRequest {
-    pub model: String,
-    pub messages: Vec<OpenAIMessage>,
+pub struct OpenAIRequest<'a> {
+    pub model: &'a str,
+    pub messages: &'a [OpenAIMessage],
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAIMessage {
-    pub role: String,
-    pub content: String,
+    pub role: &'static str,
+    pub content: Box<str>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OpenAIResponseMessage {
+    pub content: Box<str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +49,7 @@ struct OpenAIResponse {
 
 #[derive(Debug, Deserialize)]
 struct OpenAIChoice {
-    message: OpenAIMessage,
+    message: OpenAIResponseMessage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,14 +58,11 @@ pub struct OpenAIError {
 }
 
 pub async fn openai_request(
-    messages: Vec<OpenAIMessage>,
-    model: String,
-    infer_url: String,
-) -> Result<String, ApiError> {
-    let openai_request = OpenAIRequest {
-        model,
-        messages,
-    };
+    messages: &[OpenAIMessage],
+    model: &str,
+    infer_url: &str,
+) -> Result<Box<str>, ApiError> {
+    let openai_request = OpenAIRequest { model, messages };
 
     let client = reqwest::Client::new();
     let response_text = client

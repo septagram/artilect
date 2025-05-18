@@ -75,6 +75,7 @@ time = { version = "0.3", features = [
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
 dotenvy = { version = "0.15" }
+once_cell = { version = "1.21" }
 anyhow = { version = "1.0" }
 thiserror = { version = "2.0" }
 

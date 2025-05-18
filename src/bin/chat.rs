@@ -9,6 +9,7 @@ async fn main() {
 
     // Load configuration
     dotenvy::dotenv().ok();
+    artilect::infer::config::validate();
     let name: Box<str> = std::env::var("NAME")
         .expect("NAME must be set")
         .trim()

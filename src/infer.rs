@@ -3,11 +3,13 @@ use dioxus_lib::prelude::*;
 pub use components::SystemPrompt;
 pub mod element_constructors;
 
+pub mod config;
 mod error;
 pub use error::InferError;
 mod components;
 mod openai;
 use openai::{ApiError, OpenAIMessage};
+use uuid::Uuid;
 mod parsing;
 use std::sync::Arc;
 
@@ -15,6 +17,219 @@ pub use parsing::{FromLlmReply, ParseError, PlainText, WithReasoning, YesNoReply
 const AGENT_PROMPT_TEXT: &str = "You are the inference agent. \
 You are responsible for assisting other agents by solving \
 various isolated problems.";
+
+pub struct Client {
+    id: Uuid,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MessageRole {
+    System,
+    User,
+    Assistant,
+    Continue,
+}
+
+impl MessageRole {
+    pub fn into_role_str(self) -> Option<& 'static str> {
+        match self {
+            Self::System => Some(openai::ROLE_SYSTEM),
+            Self::User => Some(openai::ROLE_USER),
+            Self::Assistant => Some(openai::ROLE_ASSISTANT),
+            Self::Continue => None,
+        }
+    }
+}
+
+pub struct Message {
+    pub role: MessageRole,
+    pub content: Box<str>,
+}
+
+pub struct ChainItem {
+    pub prev: Option<Arc<ChainItem>>,
+    pub role: MessageRole,
+    pub content: Box<str>,
+}
+
+pub struct Chain<'a> {
+    id: Uuid,
+    client: &'a Client,
+    tail: Arc<ChainItem>,
+    item_count: usize,
+    message_count: usize,
+}
+
+impl<'a> Chain<'a> {
+    pub fn new(client: &'a Client, content: Box<str>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            client,
+            tail: Arc::new(ChainItem {
+                prev: None,
+                role: MessageRole::System,
+                content,
+            }),
+            item_count: 1,
+            message_count: 1,
+        }
+    }
+
+    pub fn clone(&self) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            client: self.client,
+            tail: self.tail.clone(),
+            item_count: self.item_count,
+            message_count: self.message_count,
+        }
+    }
+
+    pub fn push(&mut self, Message { role, content }: Message) -> &mut Self {
+        self.item_count += 1;
+        if !matches!(role, MessageRole::Continue) {
+            self.message_count += 1;
+        }
+        self.tail = Arc::from(ChainItem {
+            prev: Some(self.tail.clone()),
+            role,
+            content,
+        });
+        self
+    }
+
+    async fn infer_str(&self, toggle_reasoning: Option<bool>) -> Result<Box<str>, InferError> {
+        let mut messages = self.as_openai_messages();
+        if *config::MODEL_HAS_TOGGLEABLE_REASONING
+            && let Some(toggle_reasoning) = toggle_reasoning
+            && let append_str = if toggle_reasoning { config::THINK_ON_POSTFIX.clone() } else { config::THINK_OFF_POSTFIX.clone() }
+            && !append_str.is_empty()
+            && let Some(last_message) = messages.last_mut()
+        {
+            let mut new_content = String::from(last_message.content);
+            new_content.push_str(&append_str);
+            last_message.content = new_content.into();
+        }
+        match openai::openai_request(&messages, &config::DEFAULT_MODEL, &config::INFER_URL).await {
+            Ok(response) => Ok(response),
+            Err(error) => match error {
+                ApiError::ErrorResponse(error_text) => {
+                    Err(match is_context_length_error(error_text.as_str()).await {
+                        Ok(true) => InferError::ContextLengthError(Arc::from(error_text)),
+                        Ok(false) => ApiError::ErrorResponse(error_text.clone()).into(),
+                        Err(second_error) => {
+                            eprintln!(
+                                "Warning: Error from is_context_length_error: {:?}",
+                                second_error
+                            );
+                            ApiError::ErrorResponse(error_text.clone()).into()
+                        }
+                    })
+                }
+                _ => return Err(error.into()),
+            },
+        }
+    }
+
+    async fn infer_and_extract<T: FromLlmReply>(&mut self, with_reasoning: bool, do_push: bool) -> Result<WithReasoning<T>, InferError> {
+        let push_if_must = |content: Box<str>| {
+            if do_push {
+                self.push(Message {
+                    role: MessageRole::Assistant,
+                    content,
+                });
+            }
+        };
+        Ok(
+            if *config::MODEL_HAS_REASONING {
+                let response = self.infer_str(Some(with_reasoning)).await?;
+                let (value, _, value_str) = WithReasoning::<T>::parse(&response)?;
+                push_if_must(value_str.into());
+                value
+            } else if with_reasoning {
+                let reasoning_response = self.clone().push(Message {
+                    role: MessageRole::Continue,
+                    content: "\n<systemInstructions>\n    Do not answer the question just yet, just think out loud, step by step, how it should be answered.\n</systemInstructions>".into(),
+                }).infer_str(None).await?;
+                let value_response = self.push(Message {
+                    role: MessageRole::Assistant,
+                    content: format!("\n<think>{reasoning_response}</think>\n\n").into(),
+                }).infer_str(None).await?;
+                let value = WithReasoning::<T> {
+                    reasoning: Some(reasoning_response),
+                    value: T::from_reply(&value_response)?
+                };
+                push_if_must(value_response);
+                value
+            } else {
+                let response = self.infer_str(None).await?;
+                let value = WithReasoning::<T> {
+                    reasoning: None,
+                    value: T::from_reply(&response)?,
+                };
+                push_if_must(response);
+                value
+            }
+        )
+    }
+
+    pub async fn infer_drop<T: FromLlmReply>(mut self, with_reasoning: bool) -> Result<WithReasoning<T>, InferError> {
+        self.infer_and_extract(with_reasoning, false).await
+    }
+
+    pub async fn infer_keep<T: FromLlmReply>(&mut self, with_reasoning: bool) -> Result<WithReasoning<T>, InferError> {
+        self.infer_and_extract(with_reasoning, false).await
+    }
+
+    pub async fn infer_push<T: FromLlmReply>(&mut self, with_reasoning: bool) -> Result<WithReasoning<T>, InferError> {
+        self.infer_and_extract(with_reasoning, true).await
+    }
+
+    pub fn as_openai_messages(&self) -> Vec<OpenAIMessage> {
+        let mut do_merge_first_user_message = !config::MODEL_USE_SYSTEM_PROMPT;
+        let mut messages = Vec::with_capacity(self.message_count);
+        let mut cur_item = self.tail.clone();
+        let mut cur_content = cur_item.content.as_ref().to_owned();
+        let mut cur_role = openai::ROLE_SYSTEM;
+        while let Some(prev) = cur_item.prev.clone() {
+            cur_item = prev;
+            let mut role = cur_item.role;
+            if do_merge_first_user_message && matches!(role, MessageRole::User) {
+                do_merge_first_user_message = false;
+                role = MessageRole::Continue;
+            }
+            match role.into_role_str() {
+                Some(role) => {
+                    messages.push(OpenAIMessage {
+                        role: cur_role,
+                        content: std::mem::take(&mut cur_content).into(),
+                    });
+                    cur_content = cur_item.content.as_ref().to_owned();
+                    cur_role = role;
+                },
+                None => {
+                    cur_content.push_str(&cur_item.content);
+                },
+            }
+        }
+        messages.push(OpenAIMessage { role: cur_role, content: cur_content.into() });
+        messages.reverse();
+        messages
+    }
+
+    fn from_messages<T: Iterator<Item = Message>>(client: &'a Client, mut messages: T) -> Self {
+        // let mut iter = messages.into_iter(); 
+        let system_message = messages.next().expect("No messages provided");
+        if !matches!(system_message.role, MessageRole::System) {
+            panic!("First message must be a system message, found {:?} message instead", system_message.role);
+        }
+        let mut chain = Self::new(client, system_message.content);
+        for message in messages {
+            chain.push(message);
+        }
+        chain
+    }
+}
 
 #[macro_export]
 macro_rules! prompt {
@@ -127,7 +342,7 @@ pub async fn infer_value<T: FromLlmReply>(
     if model_has_reasoning {
         infer::<WithReasoning<T>>(auto_reasoning, system_prompt, prompt)
             .await
-            .map(|wr| wr.reply)
+            .map(|wr| wr.value)
     } else {
         infer::<T>(auto_reasoning, system_prompt, prompt).await
     }
