@@ -4,8 +4,10 @@
         "./macro/Cargo.toml"
     ],
     "rust-analyzer.cargo.features": [
-        "server-http2",
-        "chat-in",
-        "auth-out",
+        "infer",
+        "tokio",
+        // "server-http2",
+        // "chat-in",
+        // "auth-out",
     ],
 } 

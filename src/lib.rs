@@ -3,6 +3,7 @@
 use uuid::Uuid;
 
 pub mod actuators;
+pub mod config;
 pub mod service;
 
 #[cfg(any(feature = "auth-in", feature = "auth-out", feature = "auth-front"))]
@@ -10,6 +11,9 @@ pub mod auth;
 
 #[cfg(feature = "infer")]
 pub mod infer;
+
+#[cfg(feature = "infer")]
+pub mod prompts;
 
 pub trait Authenticated {
     fn get_from_user_id(&self) -> Uuid;

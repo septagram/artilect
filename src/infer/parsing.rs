@@ -57,6 +57,16 @@ impl FromLlmReply for PlainText {
     }
 }
 
+// TODO: Refactor WithReasoning for better memory efficiency
+//
+// - Remove FromLlmReply impl from WithReasoning
+// - Store complete LLM response as Box<str>, with reasoning/value_str as &str slices into it
+// - Create macro to generate borrowed versions of types using &str instead of Box<str>
+// - Add trait for non-consuming parsing from string slices
+// - Implement conversion from borrowed to owned versions
+//X
+// This will enable zero-copy parsing and single allocation for the entire response.
+
 pub struct WithReasoning<T: FromLlmReply> {
     pub value: T,
     pub reasoning: Option<Box<str>>,
@@ -132,7 +142,7 @@ where
 
 #[derive(FromLlmReply, Deserialize)]
 pub struct YesNoReply {
-    answer: bool,
+    pub answer: bool,
 }
 
 impl From<YesNoReply> for bool {
