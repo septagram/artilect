@@ -5,9 +5,13 @@
     ],
     "rust-analyzer.cargo.features": [
         "infer",
-        "tokio",
-        // "server-http2",
-        // "chat-in",
-        // "auth-out",
+        "server-http2",
+        "chat-in",
+        "chat-out",
+        "chat-front",
+        "auth-in",
+        "auth-out",
+        "auth-front",
     ],
+    "rust-analyzer.cargo.allTargets": false,
 } 

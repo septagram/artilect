@@ -2,59 +2,43 @@ use std::{ops::Deref, sync::Arc};
 
 use actix::prelude::*;
 use artilect_macro::message_handler;
-use dioxus_lib::prelude::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::components::{MessageLog, message_log::MessageLogItem};
+use super::prompts;
 use crate::{
     actuators::chat::dto::{
         ChatMessage, FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
         FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
         SendMessageResponse, SyncUpdate, Thread, User,
     },
-    infer::{infer_value, PlainText},
+    infer::{self, PlainText, RootChain},
     service::{self, CoercibleResult},
 };
-
 pub struct State {
-    pool: PgPool,
-    self_user: User,
-    system_prompt: String,
+    pub pool: PgPool,
+    pub self_user: User,
+    pub system_prompt: RootChain,
 }
 
 pub struct ChatService {
     state: Arc<State>,
 }
 
-impl Actor for ChatService {
-    type Context = actix::Context<Self>;
-}
-
-#[allow(non_snake_case, non_upper_case_globals)]
-pub mod dioxus_elements {
-    // pub use dioxus::html::elements::*; // TODO: remove this
-    use super::*;
-
-    crate::builder_constructors! {
-        instructions None {};
-    }
-
-    pub mod elements {
-        pub use super::*;
-    }
-}
-
 impl ChatService {
-    pub fn new(pool: PgPool, self_user: User, system_prompt: String) -> Self {
+    pub fn new(pool: PgPool, self_user: User, system_prompt: RootChain) -> Self {
         Self {
-            state: State {
+            state: Arc::new(State {
                 pool,
                 self_user,
                 system_prompt,
-            }.into(),
+            }),
         }
     }
+}
+
+impl Actor for ChatService {
+    type Context = actix::Context<Self>;
 }
 
 async fn fetch_thread(
@@ -205,11 +189,15 @@ async fn generate_thread_name(
     thread_id: Uuid,
 ) -> anyhow::Result<Thread> {
     let messages = sqlx::query_as!(
-        MessageLogItem,
+        prompts::MessageLogItem,
         r#"--sql
-            SELECT users.name AS user_name, messages.content, messages.created_at
+            SELECT
+                messages.user_id,
+                users.name AS user_name, 
+                messages.created_at,
+                messages.content
             FROM messages
-            JOIN users ON messages.user_id = users.id
+            LEFT JOIN users ON messages.user_id = users.id
             WHERE messages.thread_id = $1 
             ORDER BY messages.created_at DESC
         "#,
@@ -220,26 +208,25 @@ async fn generate_thread_name(
         .await
         .map_err(|_| service::Error::NotFound)?;
 
-    let inference = infer_value::<PlainText>(
-        true,
-        &state.system_prompt,
-        crate::prompt! {
-            MessageLog {
-                thread_name: None,
-                messages,
-            }
-            instructions {
-                "Write a title for the thread that best summarizes the conversation. ",
-                "Respond with just the thread title, no preamble or quotes or extra text. ",
-                "The title should be in the same language as the most messages are."
-            }
-        }
-            .into_service_result()?,
-    )
-    .await;
+    let inference = state.system_prompt
+        .fork()
+        .with_messages(prompts::message_log(messages)?)
+        .with_message(infer::Message {
+            role: infer::MessageRole::Continue,
+            content: markup::new! {
+                systemInstructions {
+                    "Write a title for the thread that best summarizes the conversation. "
+                    "Respond with just the thread title, no preamble or quotes or extra text. "
+                    "The title should be in the same language as the most messages are."
+                }
+            }.to_string().into_boxed_str(),
+        })
+        .infer_drop::<PlainText>(false)
+        .await;
 
     let thread = match inference {
-        Ok(PlainText(content)) => {
+        Ok(response) => {
+            let PlainText(content) = response.value;
             sqlx::query_as!(
                 Thread,
                 r#"--sql
@@ -291,13 +278,19 @@ async fn respond_to_thread(
 ) -> anyhow::Result<(ChatMessage, Thread)> {
     let timezone = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
 
-    let thread = fetch_thread(&state, thread_id).await?;
+    // @note: we don't need the thread, but we need to fetch it to ensure the artilect is a participant
+    let _ = fetch_thread_for_user(&state, state.self_user.id, thread_id).await?;
+
     let mut messages = sqlx::query_as!(
-        MessageLogItem,
+        prompts::MessageLogItem,
         r#"--sql
-            SELECT users.name AS user_name, messages.content, messages.created_at
+            SELECT
+                messages.user_id,
+                users.name AS user_name, 
+                messages.created_at,
+                messages.content
             FROM messages
-            JOIN users ON messages.user_id = users.id
+            LEFT JOIN users ON messages.user_id = users.id
             WHERE messages.thread_id = $1 
             ORDER BY messages.created_at DESC
         "#,
@@ -309,34 +302,37 @@ async fn respond_to_thread(
     for msg in &mut messages {
         msg.created_at = msg.created_at.to_offset(timezone);
     }
-
-    let inference = infer_value::<PlainText>(
-        false,
-        &state.system_prompt,
-        crate::prompt! {
-            MessageLog {
-                thread_name: thread.name,
-                messages
-            }
-            instructions {
-                "Write a response to the user's message. ",
-                "Note to respond in the language the user requested, or in the language of the last user message. ",
-                "Respond with just the content, no quotes or extra text."
-            }
-        }?
-    ).await;
+    
+    let inference = state.system_prompt
+        .fork()
+        .with_messages(prompts::message_log(messages)?)
+        .with_message(infer::Message {
+            role: infer::MessageRole::Continue,
+            content: markup::new! {
+                systemInstructions {
+                    "Write a response to the user's message. "
+                    "Note to respond in the language the user requested, or in the language of the last user message. "
+                    "Respond with just the content, no quotes or extra text."
+                }
+            }.to_string().into_boxed_str(),
+        })
+        .infer_drop::<PlainText>(false)
+        .await;
 
     match inference {
-        Ok(PlainText(content)) => Ok(
-            create_message(
-                &state.pool,
-                Some(state.self_user.id),
-                thread_id,
-                None,
-                content.deref(),
+        Ok(response) => {
+            let PlainText(content) = response.value;
+            Ok(
+                create_message(
+                    &state.pool,
+                    Some(state.self_user.id),
+                    thread_id,
+                    None,
+                    content.deref(),
+                )
+                    .await?
             )
-                .await?
-        ),
+        },
         Err(e) => Ok(
             create_message(
                 &state.pool,

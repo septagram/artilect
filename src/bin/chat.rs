@@ -25,6 +25,7 @@ async fn main() {
         Err(VarError::NotPresent) => None,
         Err(err) => panic!("Failed to parse PORT: {}", err),
     };
+    let client = artilect::infer::Client::new();
 
-    artilect::actuators::chat::back::serve(name, database_url.into(), port).await;
+    artilect::actuators::chat::back::serve(name, database_url.into(), port, client).await;
 }

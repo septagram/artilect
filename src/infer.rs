@@ -1,4 +1,5 @@
 use indoc::formatdoc;
+use ouroboros::self_referencing;
 
 pub mod config;
 mod error;
@@ -17,6 +18,12 @@ various isolated problems.";
 
 pub struct Client {
     id: Uuid,
+}
+
+impl Client {
+    pub fn new() -> Self {
+        Self { id: Uuid::new_v4() }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -280,6 +287,37 @@ impl<'a> Chain<'a> {
     }
 }
 
+#[self_referencing]
+pub struct RootChain {
+    client: Client,
+    #[borrows(client)]
+    #[covariant]
+    chain: Chain<'this>,
+}
+
+impl RootChain {
+    pub fn from_message(client: Client, message: Message) -> Self {
+        RootChainBuilder {
+            client,
+            chain_builder: |client| {
+                Chain::new(client).with_message(message)
+            },
+        }.build()
+    }
+
+    pub fn from_messages(client: Client, messages: impl IntoIterator<Item = Message>) -> Self {
+        RootChainBuilder {
+            client,
+            chain_builder: |client| {
+                Chain::new(client).with_messages(messages)
+            },
+        }.build()
+    }
+
+    pub fn fork(&self) -> Chain {
+        self.with_chain(|chain| chain.clone())
+    }
+}
 
 pub fn get_artilect_name() -> String {
     let name = std::env::var("NAME")

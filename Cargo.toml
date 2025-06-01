@@ -67,6 +67,7 @@ mobile = ["dioxus/mobile"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
+ouroboros = { version = "0.18" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 uuid = { version = "1.13", features = ["v4", "serde", "js", "fast-rng"] }
