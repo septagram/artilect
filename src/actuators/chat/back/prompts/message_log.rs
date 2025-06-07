@@ -3,6 +3,7 @@ use time::format_description::{self, FormatItem};
 use uuid::Uuid;
 
 use crate::infer;
+use super::super::super::dto::User;
 
 static DATE_FORMAT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
     format_description::parse("[weekday] [year]-[month]-[day]")
@@ -19,21 +20,40 @@ static TIME_FORMAT_SHORT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
         .expect("Failed to parse short time format")
 });
 
-#[derive(Clone, PartialEq, sqlx::FromRow)]
-pub struct MessageLogItem {
+#[derive(sqlx::FromRow)]
+pub struct MessageLogItemRow {
     pub user_id: Option<Uuid>,
-    pub user_name: String,
+    pub user_name: Option<String>,
     pub content: String,
     pub created_at: time::OffsetDateTime,
 }
 
+pub struct MessageLogItem {
+    pub user: Option<User>,
+    pub content: String,
+    pub created_at: time::OffsetDateTime,
+}
+
+impl From<MessageLogItemRow> for MessageLogItem {
+    fn from(row: MessageLogItemRow) -> Self {
+        Self {
+            user: match (row.user_id, row.user_name) {
+                (Some(id), Some(name)) => Some(User { id, name }),
+                _ => None
+            },
+            content: row.content,
+            created_at: row.created_at,
+        }
+    }
+}
+
 impl MessageLogItem {
     pub fn is_event(&self) -> bool {
-        self.user_id.is_none()
+        self.user.is_none()
     }
 
     pub fn is_own_message(&self) -> bool {
-        self.user_id == Some(Uuid::nil())
+        self.user.as_ref().map(|u| u.id == Uuid::nil()).unwrap_or(false)
     }
 }
 
@@ -70,16 +90,15 @@ pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item =
             infer::MessageRole::User
         };
 
-        let content = if message.is_event() {
-            markup::new! {
+        let content = match message.user {
+            None => markup::new! {
                 event [date = &date_attr, time = &time_attr] {
                     @message.content
                 }
-            }.to_string().into_boxed_str()
-        } else {
-            format!("{}\n{}", markup::new! {
+            }.to_string().into_boxed_str(),
+            Some(user) => format!("{}\n{}", markup::new! {
                 context {
-                    messageInfo [date = &date_attr, time = &time_attr, from = &message.user_name];
+                    messageInfo [date = &date_attr, time = &time_attr, from = &user.name];
                 }
             }, message.content).into_boxed_str()
         };

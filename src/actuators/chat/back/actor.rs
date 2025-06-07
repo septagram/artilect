@@ -189,11 +189,11 @@ async fn generate_thread_name(
     thread_id: Uuid,
 ) -> anyhow::Result<Thread> {
     let messages = sqlx::query_as!(
-        prompts::MessageLogItem,
+        prompts::MessageLogItemRow,
         r#"--sql
             SELECT
                 messages.user_id,
-                users.name AS user_name, 
+                users.name AS "user_name?", 
                 messages.created_at,
                 messages.content
             FROM messages
@@ -206,7 +206,11 @@ async fn generate_thread_name(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| service::Error::NotFound)?
+        .into_iter()
+        .map(prompts::MessageLogItem::from)
+        .collect::<Vec<_>>();
+    // @todo Make it less ugly by using .fetch instead of .fetch_all
 
     let inference = state.system_prompt
         .fork()
@@ -282,11 +286,11 @@ async fn respond_to_thread(
     let _ = fetch_thread_for_user(&state, state.self_user.id, thread_id).await?;
 
     let mut messages = sqlx::query_as!(
-        prompts::MessageLogItem,
+        prompts::MessageLogItemRow,
         r#"--sql
             SELECT
                 messages.user_id,
-                users.name AS user_name, 
+                users.name AS "user_name?", 
                 messages.created_at,
                 messages.content
             FROM messages
@@ -297,7 +301,11 @@ async fn respond_to_thread(
         thread_id,
     )
         .fetch_all(&state.pool)
-        .await?;
+        .await?
+        .into_iter()
+        .map(prompts::MessageLogItem::from)
+        .collect::<Vec<_>>();
+    // @todo Make it less ugly by using .fetch instead of .fetch_all
 
     for msg in &mut messages {
         msg.created_at = msg.created_at.to_offset(timezone);
