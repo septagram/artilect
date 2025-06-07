@@ -1,5 +1,8 @@
 use indoc::formatdoc;
 use ouroboros::self_referencing;
+use serde_yaml;
+use textwrap::{wrap, Options};
+use regex::Regex;
 
 pub mod config;
 mod error;
@@ -44,6 +47,15 @@ impl MessageRole {
         }
     }
 }
+
+// push content blocks instead, e.g.
+// pub enum ContentBlock {
+//     NewMessage(MessageRole),
+//     Text(Box<str>),
+//     ImageUrl { url: String },
+//     ImageFile { data: Vec<u8> },
+//     // ... other content types
+// }
 
 pub struct Message {
     pub role: MessageRole,
@@ -151,6 +163,34 @@ impl<'a> Chain<'a> {
             new_content.push_str(&append_str);
             last_message.content = new_content.into();
         }
+
+        let yaml = serde_yaml::to_string(&messages).unwrap_or_else(|_| format!("{:?}", messages));
+        let indent_re = Regex::new(r"^(\s*)").unwrap();
+        let wrapped = yaml.lines()
+            .map(|line| {
+                let indent = indent_re.captures(line)
+                    .and_then(|caps| caps.get(1))
+                    .map(|m| m.as_str())
+                    .unwrap_or("");
+                let content = line.trim_start();
+                
+                if content.is_empty() {
+                    line.to_string()
+                } else {
+                    wrap(content, Options::new(80)
+                        .break_words(false)
+                        .word_separator(textwrap::WordSeparator::AsciiSpace)
+                        .word_splitter(textwrap::WordSplitter::NoHyphenation)
+                        .initial_indent(indent)
+                        // .subsequent_indent(&format!("{}  ", indent)))
+                        .subsequent_indent(indent))
+                        .join("\n")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        tracing::info!("Prompt:\n{}", wrapped);
+
         match openai::openai_request(&messages, &config::DEFAULT_MODEL, &config::INFER_URL).await {
             Ok(response) => Ok(response),
             Err(error) => match error {
