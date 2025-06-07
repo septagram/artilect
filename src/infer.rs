@@ -3,15 +3,16 @@ use ouroboros::self_referencing;
 use serde_yaml;
 use textwrap::{wrap, Options};
 use regex::Regex;
+use uuid::Uuid;
+use std::sync::Arc;
 
 pub mod config;
 mod error;
 pub use error::InferError;
 mod openai;
-use openai::{ApiError, OpenAIMessage};
-use uuid::Uuid;
+use openai::{ApiError, OpenAIMessage, OpenAIContentPart};
 mod parsing;
-use std::sync::Arc;
+mod util;
 
 pub use parsing::{FromLlmReply, ParseError, PlainText, WithReasoning, YesNoReply};
 
@@ -34,16 +35,15 @@ pub enum MessageRole {
     System,
     User,
     Assistant,
-    Continue,
 }
 
 impl MessageRole {
-    pub fn into_role_str(self) -> Option<&'static str> {
+    pub fn into_role_str(self, convert_system_to_user: bool) -> &'static str {
         match self {
-            Self::System => Some(openai::ROLE_SYSTEM),
-            Self::User => Some(openai::ROLE_USER),
-            Self::Assistant => Some(openai::ROLE_ASSISTANT),
-            Self::Continue => None,
+            Self::System if convert_system_to_user => openai::ROLE_USER,
+            Self::System => openai::ROLE_SYSTEM,
+            Self::User => openai::ROLE_USER,
+            Self::Assistant => openai::ROLE_ASSISTANT,
         }
     }
 }
@@ -59,19 +59,52 @@ impl MessageRole {
 
 pub struct Message {
     pub role: MessageRole,
-    pub content: Box<str>,
+    pub content: Vec<ContentBlock>,
 }
 
-pub struct ChainItem {
-    pub prev: Option<Arc<ChainItem>>,
-    pub role: MessageRole,
-    pub content: Box<str>,
+impl Message {
+    pub fn new_text_user(text: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::User,
+            content: vec![ContentBlock::Text(text.into().into())],
+        }
+    }
+
+    pub fn new_text_assistant(text: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content: vec![ContentBlock::Text(text.into().into())],
+        }
+    }
+
+    pub fn new_text_system(text: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::System,
+            content: vec![ContentBlock::Text(text.into().into())],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ContentBlock {
+    Text(Box<str>),
+}
+
+pub struct ChainLink {
+    pub item: ChainItem,
+    pub prev: Option<Arc<ChainLink>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChainItem {
+    NewMessage(MessageRole),
+    ContentBlock(ContentBlock),
 }
 
 pub struct Chain<'a> {
     id: Uuid,
     client: &'a Client,
-    tail: Option<Arc<ChainItem>>,
+    tail: Option<Arc<ChainLink>>,
     item_count: usize,
     message_count: usize,
 }
@@ -98,6 +131,7 @@ impl<'a> Chain<'a> {
             message_count: 0,
         }
     }
+
     pub fn set_client(&mut self, client: &'a Client) {
         self.client = client;
     }
@@ -107,35 +141,43 @@ impl<'a> Chain<'a> {
         self
     }
 
-    pub fn push(&mut self, Message { role, content }: Message) {
-        if matches!(role, MessageRole::Continue) {
-            if self.tail.is_none() {
-                // @todo: Rework panic into something better when we figure out
-                // multipart messages. Don't want to return Result though.
-                panic!("Continue message without any previous messages");
-            }
-        } else {
-            self.message_count += 1;
+    pub fn push_message(&mut self, Message { role, content }: Message) {
+        self.push_item(ChainItem::NewMessage(role));
+        for block in content {
+            self.push_item(ChainItem::ContentBlock(block));
+        }
+    }
+
+    pub fn push_item(&mut self, item: ChainItem) {
+        if self.tail.is_none() && !matches!(item, ChainItem::NewMessage(_)) {
+            panic!("Cannot push content to empty chain, must push NewMessage first");
         }
         self.item_count += 1;
-        self.tail = Some(Arc::from(ChainItem {
+        if matches!(item, ChainItem::NewMessage(_)) {
+            self.message_count += 1;
+        }
+        self.tail = Some(Arc::from(ChainLink {
             prev: self.tail.clone(),
-            role,
-            content,
+            item,
         }));
     }
 
     pub fn with_message(mut self, message: Message) -> Self {
-        self.push(message);
+        self.push_message(message);
         self
     }
 
-    pub fn extend<I>(&mut self, messages: I)
+    pub fn with_item(mut self, item: ChainItem) -> Self {
+        self.push_item(item);
+        self
+    }
+
+    pub fn extend_messages<I>(&mut self, messages: I)
     where
         I: IntoIterator<Item = Message>,
     {
         for message in messages {
-            self.push(message);
+            self.push_message(message);
         }
     }
 
@@ -143,7 +185,24 @@ impl<'a> Chain<'a> {
     where
         I: IntoIterator<Item = Message>,
     {
-        self.extend(messages);
+        self.extend_messages(messages);
+        self
+    }
+
+    pub fn extend_items<I>(&mut self, items: I)
+    where
+        I: IntoIterator<Item = ChainItem>,
+    {
+        for item in items {
+            self.push_item(item);
+        }
+    }
+
+    pub fn with_items<I>(mut self, items: I) -> Self
+    where
+        I: IntoIterator<Item = ChainItem>,
+    {
+        self.extend_items(items);
         self
     }
 
@@ -158,41 +217,24 @@ impl<'a> Chain<'a> {
             }
             && !append_str.is_empty()
             && let Some(last_message) = messages.last_mut()
+            && let Some(last_content) = last_message.content.last_mut()
         {
-            let mut new_content = String::from(last_message.content.clone());
-            new_content.push_str(&append_str);
-            last_message.content = new_content.into();
+            if let OpenAIContentPart::Text { text } = last_content {
+                text.push_str(&append_str);
+            } else {
+                last_message.content.push(OpenAIContentPart::Text {
+                    text: append_str.to_string(),
+                });
+            }
         }
 
-        let yaml = serde_yaml::to_string(&messages).unwrap_or_else(|_| format!("{:?}", messages));
-        let indent_re = Regex::new(r"^(\s*)").unwrap();
-        let wrapped = yaml.lines()
-            .map(|line| {
-                let indent = indent_re.captures(line)
-                    .and_then(|caps| caps.get(1))
-                    .map(|m| m.as_str())
-                    .unwrap_or("");
-                let content = line.trim_start();
-                
-                if content.is_empty() {
-                    line.to_string()
-                } else {
-                    wrap(content, Options::new(80)
-                        .break_words(false)
-                        .word_separator(textwrap::WordSeparator::AsciiSpace)
-                        .word_splitter(textwrap::WordSplitter::NoHyphenation)
-                        .initial_indent(indent)
-                        // .subsequent_indent(&format!("{}  ", indent)))
-                        .subsequent_indent(indent))
-                        .join("\n")
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        tracing::info!("Prompt:\n{}", wrapped);
+        tracing::info!("Prompt:\n{}", util::wrap_and_indent_yaml(&messages));
 
         match openai::openai_request(&messages, &config::DEFAULT_MODEL, &config::INFER_URL).await {
-            Ok(response) => Ok(response),
+            Ok(response) => {
+                tracing::info!("Response:\n{}", util::wrap_and_indent_yaml(&response));
+                Ok(response)
+            },
             Err(error) => match error {
                 ApiError::ErrorResponse(error_text) => Err(
                     match Box::pin(is_context_length_error(self.client, error_text.as_str())).await {
@@ -228,18 +270,24 @@ impl<'a> Chain<'a> {
             let (value, _, value_str) = WithReasoning::<T>::parse(&response)?;
             (value, value_str.into())
         } else if with_reasoning {
-            let reasoning_response = self.clone().with_message(Message {
-                    role: MessageRole::Continue,
-                    content: crate::system_instructions! {
-                        "Do not answer the question just yet, just think out loud, step by step, how it should be answered."
-                    },
-                }).infer_str(None).await?;
+            let reasoning_response = self
+                .clone()
+                .with_item(
+                    ChainItem::ContentBlock(ContentBlock::Text(
+                        crate::system_instructions! {
+                            "Do not answer just yet, just think out loud, step by step, how it should be answered."
+                        }
+                    ))
+                )
+                .infer_str(None).await?;
             let value_response = self
                 .clone()
-                .with_message(Message {
-                    role: MessageRole::Assistant,
-                    content: format!("\n<think>{reasoning_response}</think>\n\n").into(),
-                })
+                .with_item(ChainItem::NewMessage(MessageRole::Assistant))
+                .with_item(
+                    ChainItem::ContentBlock(
+                        ContentBlock::Text(format!("\n<think>{reasoning_response}</think>\n\n").into())
+                    )
+                )
                 .infer_str(None)
                 .await?;
             let value = WithReasoning::<T> {
@@ -278,50 +326,68 @@ impl<'a> Chain<'a> {
         with_reasoning: bool,
     ) -> Result<WithReasoning<T>, InferError> {
         let (value, value_str) = self.infer_and_extract(with_reasoning).await?;
-        self.push(Message {
-            role: MessageRole::Assistant,
-            content: value_str,
-        });
+        // @note: backend already knows about these items, so we don't need to push them normally
+        self.tail = Some(Arc::from(ChainLink {
+            prev: self.tail.clone(),
+            item: ChainItem::NewMessage(MessageRole::Assistant),
+        }));
+        self.tail = Some(Arc::from(ChainLink {
+            prev: self.tail.clone(),
+            item: ChainItem::ContentBlock(ContentBlock::Text(value_str)),
+        }));
         Ok(value)
     }
 
     pub fn as_openai_messages(&self) -> Vec<OpenAIMessage> {
-        let mut do_merge_first_user_message = !*config::MODEL_USE_SYSTEM_PROMPT;
-        match self.tail.clone() {
-            Some(mut cur_item) => {
-                let mut messages = Vec::with_capacity(self.message_count);
-                let mut cur_content = cur_item.content.as_ref().to_owned();
-                let mut cur_role = openai::ROLE_SYSTEM;
-                while let Some(prev) = cur_item.prev.clone() {
-                    cur_item = prev;
-                    let mut role = cur_item.role;
-                    if do_merge_first_user_message && matches!(role, MessageRole::User) {
-                        do_merge_first_user_message = false;
-                        role = MessageRole::Continue;
-                    }
-                    match role.into_role_str() {
-                        Some(role) => {
-                            messages.push(OpenAIMessage {
-                                role: cur_role,
-                                content: std::mem::take(&mut cur_content).into(),
-                            });
-                            cur_content = cur_item.content.as_ref().to_owned();
-                            cur_role = role;
+        let do_convert_system_to_user = !*config::MODEL_USE_SYSTEM_PROMPT;
+        let mut chain_items = Vec::with_capacity(self.item_count);
+        let mut prev = self.tail.clone();
+        while let Some(cur_item) = prev {
+            chain_items.push(cur_item.item.clone());
+            prev = cur_item.prev.clone();
+        }
+        let mut chain_items = chain_items.into_iter().rev();
+        let first_item = chain_items.next();
+        match first_item {
+            None => return Vec::new(),
+            Some(first_item) => {
+                match first_item {
+                    ChainItem::NewMessage(role) => {
+                        let mut messages = Vec::with_capacity(self.message_count);
+                        let mut cur_message = OpenAIMessage {
+                            role: role.into_role_str(do_convert_system_to_user),
+                            content: Vec::new(),
+                        };
+                        for item in chain_items {
+                            match item {
+                                ChainItem::NewMessage(role) => {
+                                    messages.push(std::mem::take(&mut cur_message));
+                                    cur_message.role = role.into_role_str(do_convert_system_to_user);
+                                },
+                                ChainItem::ContentBlock(block) => {
+                                    match block {
+                                        ContentBlock::Text(text) => {
+                                            let last_content = cur_message.content.last_mut();
+                                            if let Some(last_content) = last_content 
+                                                && let OpenAIContentPart::Text { text: last_text } = last_content
+                                                && !last_text.is_empty()
+                                            {
+                                                last_text.push_str(text.as_ref());
+                                            } else {
+                                                cur_message.content.push(OpenAIContentPart::Text {
+                                                    text: text.to_string(),
+                                                });
+                                            }
+                                        },
+                                    }
+                                },
+                            }
                         }
-                        None => {
-                            cur_content.push_str(&cur_item.content);
-                        }
-                    }
+                        messages.push(cur_message);
+                        messages
+                    },
+                    _ => panic!("First item must be NewMessage"),
                 }
-                messages.push(OpenAIMessage {
-                    role: cur_role,
-                    content: cur_content.into(),
-                });
-                messages.reverse();
-                messages
-            }
-            None => {
-                vec![]
             }
         }
     }
@@ -376,9 +442,9 @@ pub async fn is_context_length_error(client: &Client, error: &str) -> Result<boo
     let quoted_error = format!("\"{}\"", error.replace('\\', "\\\\").replace('"', "\\\""));
 
     Ok(Chain::new(client)
-        .with_message(Message {
-            role: MessageRole::User,
-            content: formatdoc! {"
+        .with_message(
+            Message::new_text_user(
+                formatdoc! {"
                     The following is an error message from OpenAI: {quoted_error}.
                     Is this an error about context length?
 
@@ -386,8 +452,8 @@ pub async fn is_context_length_error(client: &Client, error: &str) -> Result<boo
                         \"answer\": true if this is a context length error, false otherwise
                     }}
                 "}
-            .into(),
-        })
+            )
+        )
         .infer_drop::<YesNoReply>(false)
         .await?
         .value

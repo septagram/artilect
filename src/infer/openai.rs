@@ -34,7 +34,53 @@ pub struct OpenAIRequest<'a> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAIMessage {
     pub role: &'static str,
-    pub content: Box<str>,
+    pub content: Vec<OpenAIContentPart>,
+}
+
+impl Default for OpenAIMessage {
+    fn default() -> Self {
+        Self {
+            role: ROLE_SYSTEM,
+            content: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum OpenAIContentPart {
+    #[serde(rename = "text")]
+    Text {
+        text: String
+    },
+    #[serde(rename = "image_url")]
+    ImageUrl {
+        image_url: String
+    },
+    #[serde(rename = "input_audio")]
+    Audio {
+        input_audio: AudioData
+    },
+    #[serde(rename = "file")]
+    File {
+        file: FileData
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AudioData {
+    pub format: String,
+    pub data: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

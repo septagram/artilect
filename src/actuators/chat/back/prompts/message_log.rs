@@ -95,14 +95,17 @@ pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item =
                 event [date = &date_attr, time = &time_attr] {
                     @message.content
                 }
-            }.to_string().into_boxed_str(),
+            }.to_string(),
             Some(user) => format!("{}\n{}", markup::new! {
                 context {
                     messageInfo [date = &date_attr, time = &time_attr, from = &user.name];
                 }
-            }, message.content).into_boxed_str()
+            }, message.content)
         };
 
-        Ok(infer::Message { role, content })
+        Ok(infer::Message { 
+            role, 
+            content: vec![infer::ContentBlock::Text(content.into())]
+        })
     }).collect::<Result<Vec<_>, _>>()?.into_iter())
 }

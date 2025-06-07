@@ -215,16 +215,13 @@ async fn generate_thread_name(
     let inference = state.system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_message(infer::Message {
-            role: infer::MessageRole::Continue,
-            content: markup::new! {
-                systemInstructions {
-                    "Write a title for the thread that best summarizes the conversation. "
-                    "Respond with just the thread title, no preamble or quotes or extra text. "
-                    "The title should be in the same language as the most messages are."
-                }
-            }.to_string().into_boxed_str(),
-        })
+        .with_item(infer::ChainItem::ContentBlock(infer::ContentBlock::Text(markup::new! {
+            systemInstructions {
+                "Write a title for the thread that best summarizes the conversation. "
+                "Respond with just the thread title, no preamble or quotes or extra text. "
+                "The title should be in the same language as the most messages are."
+            }
+        }.to_string().into())))
         .infer_drop::<PlainText>(false)
         .await;
 
@@ -314,16 +311,11 @@ async fn respond_to_thread(
     let inference = state.system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_message(infer::Message {
-            role: infer::MessageRole::Continue,
-            content: markup::new! {
-                systemInstructions {
-                    "Write a response to the user's message. "
-                    "Note to respond in the language the user requested, or in the language of the last user message. "
-                    "Respond with just the content, no quotes or extra text."
-                }
-            }.to_string().into_boxed_str(),
-        })
+        .with_item(infer::ChainItem::ContentBlock(infer::ContentBlock::Text(markup::new! {
+            systemInstructions {
+                "Note to respond in the language the message above."
+            }
+        }.to_string().into())))
         .infer_drop::<PlainText>(false)
         .await;
 

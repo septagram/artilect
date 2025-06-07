@@ -75,6 +75,7 @@ pub struct WithReasoning<T: FromLlmReply> {
 impl<T: FromLlmReply> WithReasoning<T> {
     pub fn parse(reply: &str) -> Result<(Self, &str, &str), ParseError> {
         const THINK_TAG: &str = "<think>";
+        let reply = reply.trim_start();
         if !reply.starts_with(THINK_TAG) {
             return Err(ParseError::MissingReasoningSequence);
         }
