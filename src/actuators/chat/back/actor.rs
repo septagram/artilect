@@ -313,6 +313,7 @@ async fn respond_to_thread(
         .with_messages(prompts::message_log(messages)?)
         .with_item(infer::ChainItem::ContentBlock(infer::ContentBlock::Text(markup::new! {
             systemInstructions {
+                "Do not just repeat back the question. "
                 "Note to respond in the language the message above."
             }
         }.to_string().into())))

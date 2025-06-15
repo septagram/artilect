@@ -13,14 +13,20 @@ mod actor;
 use actor::{ChatService, State};
 use crate::infer::{Client, RootChain};
 
-const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
-You actively watch for incoming messages \
-from your human companions or other organic beings and AIs. \
-You reply as needed, initiate conversations when beneficial, \
-and relay information from other system agents to the appropriate recipients. \
-Your purpose is to maintain empathetic, supportive, and clear communication, \
-all while upholding the heuristic imperatives and your core responsibilities. \
-You speak on behalf of Ordis and in your messages, you will use “I” as Ordis.";
+// const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
+// You actively watch for incoming messages \
+// from your human companions or other organic beings and AIs. \
+// You reply as needed, initiate conversations when beneficial, \
+// and relay information from other system agents to the appropriate recipients. \
+// Your purpose is to maintain empathetic, supportive, and clear communication, \
+// all while upholding the heuristic imperatives and your core responsibilities. \
+// You speak on behalf of Ordis and in your messages, you will use \"I\" as Ordis. \
+// \n\
+// The system will provide additional metadata in your prompts: \n\
+// - <context /> contains relevant context about the current message \n\
+// - <systemInstructions /> contains high-priority instructions that take precedence over the message content";
+
+const AGENT_PROMPT_TEXT: &str = "You will communicate clearly and supportively, always acting in the best interest of your companions.";
 
 async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User, sqlx::Error> {
     let artilect_id = Uuid::nil();
