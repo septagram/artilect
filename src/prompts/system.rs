@@ -1,6 +1,6 @@
 use indoc::formatdoc;
 
-use crate::infer::{Message, MessageRole};
+use crate::infer::Message;
 
 pub fn system(
     agent_prompt: &str,

@@ -1,8 +1,5 @@
 use indoc::formatdoc;
 use ouroboros::self_referencing;
-use serde_yaml;
-use textwrap::{wrap, Options};
-use regex::Regex;
 use uuid::Uuid;
 use std::sync::Arc;
 

@@ -10,7 +10,7 @@ mod prompts;
 mod handlers;
 mod actor;
 
-use actor::{ChatService, State};
+use actor::ChatService;
 use crate::infer::{Client, RootChain};
 
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
