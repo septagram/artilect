@@ -215,14 +215,14 @@ async fn generate_thread_name(
     let inference = state.system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_item(infer::ChainItem::ContentBlock(infer::ContentBlock::Text(markup::new! {
+        .with_message(infer::Message::new_text_system(markup::new! {
             systemInstructions {
                 "Write a title for the thread that best summarizes the conversation. "
                 "Respond with just the thread title, no preamble or quotes or extra text. "
                 "The title should be in the same language as the most messages are."
             }
-        }.to_string().into())))
-        .infer_drop::<PlainText>(false)
+        }.to_string()))
+        .infer_drop::<PlainText>(true)
         .await;
 
     let thread = match inference {
@@ -311,12 +311,12 @@ async fn respond_to_thread(
     let inference = state.system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_item(infer::ChainItem::ContentBlock(infer::ContentBlock::Text(markup::new! {
+        .with_message(infer::Message::new_text_system(markup::new! {
             systemInstructions {
                 "Do not just repeat back the question. "
                 "Note to respond in the language the message above."
             }
-        }.to_string().into())))
+        }.to_string()))
         .infer_drop::<PlainText>(false)
         .await;
 
