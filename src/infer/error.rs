@@ -5,9 +5,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InferError {
-    #[error("Failed to render prompt: {0}")]
-    RenderError(String),
-
     #[error("LLM API error: {0}")]
     ApiError(#[from] ApiError),
 
@@ -16,12 +13,6 @@ pub enum InferError {
 
     #[error("Context length error: {0}")]
     ContextLengthError(Arc<str>),
-}
-
-impl From<dioxus_lib::prelude::RenderError> for InferError {
-    fn from(err: dioxus_lib::prelude::RenderError) -> Self {
-        InferError::RenderError(err.to_string())
-    }
 }
 
 impl From<reqwest::Error> for InferError {

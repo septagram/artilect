@@ -31,12 +31,16 @@ pub fn ChatMessage(message_id: Uuid) -> Element {
                     b.attr("message").attr(message_source)
                 }
             };
+            let rendered_markdown = match markdown::to_html_with_options(&message.content, &markdown::Options::gfm()) {
+                Ok(rendered) => rendered,
+                Err(_) => markdown::to_html(&message.content),
+            };
             rsx! {
                 div {
                     class: b.to_string(),
-                    p {
+                    div {
                         class: b.el("text").to_string(),
-                        "{message.content}"
+                        dangerous_inner_html: rendered_markdown
                     }
                     if is_syncing {
                         p {

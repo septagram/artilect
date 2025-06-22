@@ -9,6 +9,7 @@ async fn main() {
 
     // Load configuration
     dotenvy::dotenv().ok();
+    artilect::config::validate();
     let name: Box<str> = std::env::var("NAME")
         .expect("NAME must be set")
         .trim()
@@ -24,6 +25,7 @@ async fn main() {
         Err(VarError::NotPresent) => None,
         Err(err) => panic!("Failed to parse PORT: {}", err),
     };
+    let client = artilect::infer::Client::new();
 
-    artilect::actuators::chat::back::serve(name, database_url.into(), port).await;
+    artilect::actuators::chat::back::serve(name, database_url.into(), port, client).await;
 }

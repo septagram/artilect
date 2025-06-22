@@ -57,25 +57,51 @@ impl FromLlmReply for PlainText {
     }
 }
 
+// TODO: Refactor WithReasoning for better memory efficiency
+//
+// - Remove FromLlmReply impl from WithReasoning
+// - Store complete LLM response as Box<str>, with reasoning/value_str as &str slices into it
+// - Create macro to generate borrowed versions of types using &str instead of Box<str>
+// - Add trait for non-consuming parsing from string slices
+// - Implement conversion from borrowed to owned versions
+//X
+// This will enable zero-copy parsing and single allocation for the entire response.
+
 pub struct WithReasoning<T: FromLlmReply> {
-    pub reply: T,
-    pub reasoning: Box<str>,
+    pub value: T,
+    pub reasoning: Option<Box<str>>,
 }
 
-impl<T: FromLlmReply> FromLlmReply for WithReasoning<T> {
-    fn from_reply(reply: &str) -> Result<Self, ParseError> {
+impl<T: FromLlmReply> WithReasoning<T> {
+    pub fn parse(reply: &str) -> Result<(Self, &str, &str), ParseError> {
         const THINK_TAG: &str = "<think>";
+        let reply = reply.trim_start();
         if !reply.starts_with(THINK_TAG) {
             return Err(ParseError::MissingReasoningSequence);
         }
         let reply = &reply[THINK_TAG.len()..];
         match reply.split_once("</think>") {
-            Some((reasoning, reply)) => Ok(WithReasoning {
-                reply: T::from_reply(reply.trim())?,
-                reasoning: reasoning.trim().into(),
-            }),
+            Some((reasoning, reply)) => {
+                let reasoning = reasoning.trim();
+                let reply = reply.trim();
+                Ok((
+                    WithReasoning {
+                        value: T::from_reply(reply.trim())?,
+                        reasoning: Some(reasoning.trim().into()),
+                    },
+                    reasoning,
+                    reply,
+                ))
+            },
             None => Err(ParseError::BrokenReasoningSequence),
         }
+    }
+}
+
+impl<T: FromLlmReply> FromLlmReply for WithReasoning<T> {
+    fn from_reply(reply: &str) -> Result<Self, ParseError> {
+        let (value, _, _) = Self::parse(reply)?;
+        Ok(value)
     }
 }
 
@@ -117,7 +143,7 @@ where
 
 #[derive(FromLlmReply, Deserialize)]
 pub struct YesNoReply {
-    answer: bool,
+    pub answer: bool,
 }
 
 impl From<YesNoReply> for bool {
