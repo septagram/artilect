@@ -32,7 +32,6 @@
 
 .chat-message__text {
     margin: 0;
-    white-space: pre-wrap;
 }
 
 .chat-message__syncing {

@@ -47,6 +47,7 @@ frontend = [
     "dep:futures-util",
     "dep:dotenvy_macro",
     "time/wasm-bindgen",
+    "dep:markdown",
 ]
 infer = [
     "dep:markup",
@@ -93,6 +94,7 @@ dioxus = { version = "0.6", optional = true }
 futures-util = { version = "0.3", optional = true }
 classnames = { version = "2.1", optional = true }
 markup = { version = "0.15", optional = true }
+markdown = { version = "1.0", optional = true }
 indoc = { version = "2.0", optional = true }
 # getrandom = { version = "0.2", optional = true, features = ["js"] }
 serde_yaml = { version = "0.9", optional = true }
