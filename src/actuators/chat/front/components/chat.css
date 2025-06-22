@@ -3,7 +3,6 @@
     flex-direction: column;
     flex-grow: 1;
     height: 100vh;
-    padding: 0.5rem;
     gap: 1rem;
     border-left: 1px solid #16213e;
 }
@@ -14,7 +13,7 @@
     display: flex;
     flex-direction: column-reverse;
     gap: 1rem;
-    padding-right: 1rem;
+    padding: 0 0.5rem;
     scrollbar-width: thin;
     scrollbar-color: #0f3460 #1a1a2e;
     scrollbar-gutter: stable;
@@ -23,6 +22,7 @@
 .chat__input {
     display: flex;
     gap: 1rem;
+    padding: 0.25rem;
 }
 
 .chat__input-field {
@@ -98,4 +98,5 @@ body {
     font-family: system-ui, -apple-system, sans-serif;
     color: #ddd;
     background: #1a1a2e;
+    margin: 0;
 } 
