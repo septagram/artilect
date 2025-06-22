@@ -215,7 +215,8 @@ async fn generate_thread_name(
     let inference = state.system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_message(infer::Message::new_text_system(markup::new! {
+        // @todo: make the next message system message when the model no longer has problems with it.
+        .with_message(infer::Message::new_text_user(markup::new! {
             systemInstructions {
                 "Write a title for the thread that best summarizes the conversation. "
                 "Respond with just the thread title, no preamble or quotes or extra text. "
