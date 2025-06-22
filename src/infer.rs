@@ -60,6 +60,13 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn new_text(role: MessageRole, text: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: vec![ContentBlock::Text(text.into().into())],
+        }
+    }
+
     pub fn new_text_user(text: impl Into<String>) -> Self {
         Self {
             role: MessageRole::User,

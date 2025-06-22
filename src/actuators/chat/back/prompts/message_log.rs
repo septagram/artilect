@@ -60,8 +60,9 @@ impl MessageLogItem {
 pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item = infer::Message>, time::error::Format> {
     let now = time::OffsetDateTime::now_utc();
     let mut last_date = None;
+    let mut output_messages = Vec::new();
 
-    Ok(messages.into_iter().rev().map(move |message| -> Result<infer::Message, time::error::Format> {
+    for message in messages.into_iter().rev() {
         let date = message.created_at.date();
         let do_show_date = match last_date {
             None => true,
@@ -90,22 +91,21 @@ pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item =
             infer::MessageRole::User
         };
 
-        let content = match message.user {
-            None => markup::new! {
+        match message.user {
+            None => output_messages.push(infer::Message::new_text_system(markup::new! {
                 event [date = &date_attr, time = &time_attr] {
                     @message.content
                 }
-            }.to_string(),
-            Some(user) => format!("{}\n{}", markup::new! {
-                context {
-                    messageInfo [date = &date_attr, time = &time_attr, from = &user.name];
-                }
-            }, message.content)
+            }.to_string())),
+            Some(user) => {
+                let context = markup::new! {
+                    nextMessageInfo [date = &date_attr, time = &time_attr, from = &user.name];
+                };
+                output_messages.push(infer::Message::new_text_system(context.to_string()));
+                output_messages.push(infer::Message::new_text(role, message.content));
+            }
         };
+    }
 
-        Ok(infer::Message { 
-            role, 
-            content: vec![infer::ContentBlock::Text(content.into())]
-        })
-    }).collect::<Result<Vec<_>, _>>()?.into_iter())
+    Ok(output_messages.into_iter())
 }
