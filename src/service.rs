@@ -69,24 +69,6 @@ impl<T> ActixResult<T> for std::result::Result<Result<T>, MailboxError> {
     }
 }
 
-// fn map_service_response<T>(
-//     actix_response: Result<service::Result<T>, MailboxError>,
-// ) -> service::Result<Json<T>> {
-//     match actix_response {
-//         Ok(service_response) => match service_response {
-//             Ok(response) => Ok(Json(response)),
-//             Err(error) => {
-//                 tracing::error!("Service error: {:?}", error);
-//                 Err(error)
-//             },
-//         },
-//         Err(err) => {
-//             tracing::error!("Mailbox error: {:?}", err);
-//             Err(service::Error::ServiceUnavailable)
-//         },
-//     }
-// }
-
 #[cfg(feature = "backend")]
 impl From<actix::MailboxError> for Error {
     fn from(_: actix::MailboxError) -> Self {

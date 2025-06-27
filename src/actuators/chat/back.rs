@@ -41,7 +41,7 @@ async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User, sql
             SET name = $2
             RETURNING id, name
         "#,
-        artilect_id, 
+        artilect_id,
         name.as_str(),
     )
     .fetch_one(pool)
@@ -66,7 +66,7 @@ pub async fn serve(name: Box<str>, database_url: Box<str>, port: Option<u16>, cl
 
     // Create shared state
     let actor = ChatService::new(pool, self_user, system_prompt).start();
-    let state = Arc::new(client::local::ChatClient::new(actor));
+    let state = Arc::new(actor.clone());
 
     let router = handlers::build_router(state);
 
