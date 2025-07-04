@@ -15,11 +15,6 @@ pub mod infer;
 #[cfg(feature = "infer")]
 pub mod prompts;
 
-pub trait Authenticated {
-    fn get_from_user_id(&self) -> Uuid;
-    fn set_from_user_id(&mut self, id: Uuid);
-}
-
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;
 }

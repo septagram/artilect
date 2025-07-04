@@ -1,9 +1,13 @@
-use actix::MailboxError;
 use serde::Deserialize;
+use uuid::Uuid;
 
 #[cfg(feature = "backend")]
 #[allow(unused_imports)]
 use serde::Serialize;
+
+#[cfg(feature = "backend")]
+#[allow(unused_imports)]
+use actix::MailboxError;
 
 pub enum ServiceType {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]
@@ -47,10 +51,12 @@ where
     }
 }
 
+#[cfg(feature = "backend")]
 pub trait ActixResult<T> {
     fn into_service_result(self: Self) -> Result<T>;
 }
 
+#[cfg(feature = "backend")]
 impl<T> ActixResult<T> for std::result::Result<Result<T>, MailboxError> {
     fn into_service_result(self: Self) -> Result<T> {
         match self {

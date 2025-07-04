@@ -43,7 +43,11 @@ pub async fn fetch_user_threads_handler(
     auth_header: TypedHeader<Authorization<Bearer>>,
 ) -> service::Result<Json<FetchUserThreadsResponse>> {
     let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    service.send(FetchUserThreadsRequest { from_user_id }).await.into_service_result()
+    service
+        .send(FetchUserThreadsRequest { from_user_id })
+        .await
+        .into_service_result()
+        .map(|response| Json(response))
 }
 
 pub async fn fetch_thread_handler(
@@ -52,7 +56,11 @@ pub async fn fetch_thread_handler(
     Path(thread_id): Path<Uuid>,
 ) -> service::Result<Json<FetchThreadResponse>> {
     let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    service.send(FetchThreadRequest { from_user_id, thread_id }).await.into_service_result()
+    service
+        .send(FetchThreadRequest { from_user_id, thread_id })
+        .await
+        .into_service_result()
+        .map(|response| Json(response))
 }
 
 pub async fn chat_handler(
@@ -64,6 +72,10 @@ pub async fn chat_handler(
     if from_user_id != request.from_user_id {
         Err(service::Error::Unauthorized)
     } else {
-        service.send(request).await.into_service_result()
+        service
+            .send(request)
+            .await
+            .into_service_result()
+            .map(|response| Json(response))
     }
 }
