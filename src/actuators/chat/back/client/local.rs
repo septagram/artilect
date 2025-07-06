@@ -13,6 +13,7 @@ use crate::{
     service,
     service::ActixResult,
 };
+use crate::service::SignedMessage;
 
 #[derive(Clone)]
 pub struct ChatClient {
@@ -26,15 +27,15 @@ impl ChatClient {
 }
 
 impl super::ChatClientTrait for ChatClient {
-    async fn fetch_user_threads(self: &Self, request: FetchUserThreadsRequest) -> service::Result<FetchUserThreadsResponse> {
+    async fn fetch_user_threads(self: &Self, request: SignedMessage<FetchUserThreadsRequest>) -> service::Result<FetchUserThreadsResponse> {
         self.actor.send(request).await.into_service_result()
     }
 
-    async fn fetch_thread_messages(self: &Self, request: FetchThreadRequest) -> service::Result<FetchThreadResponse> {
+    async fn fetch_thread_messages(self: &Self, request: SignedMessage<FetchThreadRequest>) -> service::Result<FetchThreadResponse> {
         self.actor.send(request).await.into_service_result()
     }
 
-    async fn chat(self: &Self, request: SendMessageRequest) -> service::Result<SendMessageResponse> {
+    async fn chat(self: &Self, request: SignedMessage<SendMessageRequest>) -> service::Result<SendMessageResponse> {
         self.actor.send(request).await.into_service_result()
     }
 }

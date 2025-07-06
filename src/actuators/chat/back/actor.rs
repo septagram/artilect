@@ -13,8 +13,9 @@ use crate::{
         SendMessageResponse, SyncUpdate, Thread, User,
     },
     infer::{self, PlainText, RootChain},
-    service::{self, CoercibleResult},
+    service::{self, CoercibleResult, SignedMessage, Identity},
 };
+
 pub struct State {
     pub pool: PgPool,
     pub self_user: User,
@@ -353,7 +354,10 @@ async fn respond_to_thread(
 #[message_handler(ChatService)]
 async fn fetch_user_threads(
     state: &State,
-    FetchUserThreadsRequest { from_user_id }: FetchUserThreadsRequest,
+    SignedMessage {
+        from: Identity { user_id, service_type: _ },
+        data: _,
+    }: SignedMessage<FetchUserThreadsRequest>,
 ) -> service::Result<FetchUserThreadsResponse> {
     let user = sqlx::query_as!(
         User,
@@ -362,7 +366,7 @@ async fn fetch_user_threads(
         FROM users
         WHERE id = $1
         "#,
-        from_user_id,
+        user_id,
     )
         .fetch_one(&state.pool)
         .await
@@ -377,7 +381,7 @@ async fn fetch_user_threads(
         WHERE tp.user_id = $1
         ORDER BY t.updated_at DESC
         "#,
-        from_user_id,
+        user_id,
     )
         .fetch_all(&state.pool)
         .await
@@ -386,7 +390,7 @@ async fn fetch_user_threads(
     Ok(FetchUserThreadsResponse {
         users: vec![SyncUpdate::Updated(user)],
         user_threads: vec![OneToManyUpdate {
-            owner_id: from_user_id,
+            owner_id: user_id,
             children: threads
                 .into_iter()
                 .map(|t| OneToManyChild::Value(t))
@@ -398,12 +402,14 @@ async fn fetch_user_threads(
 #[message_handler(ChatService)]
 async fn fetch_thread_messages(
     state: &State,
-    FetchThreadRequest {
-        from_user_id,
-        thread_id,
-    }: FetchThreadRequest,
+    SignedMessage {
+        from: Identity { user_id, service_type: _ },
+        data: FetchThreadRequest {
+            thread_id,
+        },
+    }: SignedMessage<FetchThreadRequest>,
 ) -> service::Result<FetchThreadResponse> {
-    let thread = fetch_thread_for_user(state, from_user_id, thread_id).await?;
+    let thread = fetch_thread_for_user(state, user_id, thread_id).await?;
     let messages = sqlx::query_as!(
         ChatMessage,
         r#"--sql
@@ -433,16 +439,18 @@ async fn fetch_thread_messages(
 #[message_handler(ChatService)]
 async fn chat(
     state: &State,
-    request: SendMessageRequest,
+    SignedMessage {
+        from: Identity { user_id, service_type: _ },
+        data: request,
+    }: SignedMessage<SendMessageRequest>,
 ) -> service::Result<SendMessageResponse> {
-    let from_user_id = request.from_user_id;
     let thread_id = request.message.thread_id;
     if request.is_new_thread {
-        create_thread(&state.pool, from_user_id, thread_id).await?;
+        create_thread(&state.pool, user_id, thread_id).await?;
     }
     let (user_message, _) = create_message(
         &state.pool,
-        Some(from_user_id),
+        Some(user_id),
         thread_id,
         Some(request.message.id),
         &request.message.content,

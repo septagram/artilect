@@ -71,14 +71,11 @@ pub struct FetchUserThreadsResponse {
 
 #[dto(chat, request)]
 #[actix_message(FetchUserThreadsResponse, FetchUserThreadsMessage)]
-pub struct FetchUserThreadsRequest {
-    pub from_user_id: Uuid,
-}
+pub struct FetchUserThreadsRequest {}
 
 #[dto(chat, request)]
 #[actix_message(FetchThreadResponse, FetchThreadMessage)]
 pub struct FetchThreadRequest {
-    pub from_user_id: Uuid,
     pub thread_id: Uuid,
 }
 
@@ -91,7 +88,6 @@ pub struct FetchThreadResponse {
 #[dto(chat, request)]
 #[actix_message(SendMessageResponse, SendMessageMessage)]
 pub struct SendMessageRequest {
-    pub from_user_id: Uuid,
     pub message: ChatMessage,
     pub is_new_thread: bool,
 }

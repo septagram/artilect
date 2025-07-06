@@ -37,13 +37,13 @@ pub enum Error {
 }
 
 pub struct SignedMessage<T> {
-    from: Identity,
-    data: T,
+    pub from: Identity,
+    pub data: T,
 }
 
-pub enum Identity {
-    User(Uuid),
-    Service(ServiceType),
+pub struct Identity {
+    pub user_id: Uuid,
+    pub service_type: Option<ServiceType>,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

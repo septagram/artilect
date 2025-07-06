@@ -19,7 +19,7 @@ use crate::{
         SendMessageRequest, SendMessageResponse,
     },
     service,
-    service::ActixResult,
+    service::{ActixResult, SignedMessage, Identity},
 };
 
 pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
@@ -42,9 +42,15 @@ pub async fn fetch_user_threads_handler(
     State(service): State<Arc<Addr<ChatService>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
 ) -> service::Result<Json<FetchUserThreadsResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
     service
-        .send(FetchUserThreadsRequest { from_user_id })
+        .send(SignedMessage {
+            from: Identity {
+                user_id,
+                service_type: None,
+            },
+            data: FetchUserThreadsRequest {},
+        })
         .await
         .into_service_result()
         .map(|response| Json(response))
@@ -55,9 +61,15 @@ pub async fn fetch_thread_handler(
     auth_header: TypedHeader<Authorization<Bearer>>,
     Path(thread_id): Path<Uuid>,
 ) -> service::Result<Json<FetchThreadResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
     service
-        .send(FetchThreadRequest { from_user_id, thread_id })
+        .send(SignedMessage {
+            from: Identity {
+                user_id,
+                service_type: None,
+            },
+            data: FetchThreadRequest { thread_id },
+        })
         .await
         .into_service_result()
         .map(|response| Json(response))
@@ -68,14 +80,16 @@ pub async fn chat_handler(
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(request): Json<SendMessageRequest>,
 ) -> service::Result<Json<SendMessageResponse>> {
-    let from_user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    if from_user_id != request.from_user_id {
-        Err(service::Error::Unauthorized)
-    } else {
-        service
-            .send(request)
-            .await
-            .into_service_result()
-            .map(|response| Json(response))
-    }
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
+    service
+        .send(SignedMessage {
+            from: Identity {
+                user_id,
+                service_type: None,
+            },
+            data: request,
+        })
+        .await
+        .into_service_result()
+        .map(|response| Json(response))
 }

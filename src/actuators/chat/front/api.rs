@@ -37,7 +37,6 @@ pub async fn send_message(
         .post(format!("{BASE_URL}/chat"))
         .header("Authorization", format!("Bearer {USER_ID}"))
         .json(&SendMessageRequest {
-            from_user_id: USER_ID,
             message: message.clone(),
             is_new_thread,
         })

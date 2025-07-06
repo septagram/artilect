@@ -9,15 +9,15 @@ use crate::{
 pub trait ChatClientTrait {
     async fn fetch_user_threads(
         self: &Self,
-        request: FetchUserThreadsRequest,
+        request: service::SignedMessage<FetchUserThreadsRequest>,
     ) -> service::Result<FetchUserThreadsResponse>;
 
     async fn fetch_thread_messages(
         self: &Self,
-        request: FetchThreadRequest,
+        request: service::SignedMessage<FetchThreadRequest>,
     ) -> service::Result<FetchThreadResponse>;
 
-    async fn chat(self: &Self, request: SendMessageRequest)
+    async fn chat(self: &Self, request: service::SignedMessage<SendMessageRequest>)
     -> service::Result<SendMessageResponse>;
 }
 
