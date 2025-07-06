@@ -69,12 +69,14 @@ pub struct FetchUserThreadsResponse {
     pub user_threads: Vec<OneToManyUpdate<Thread>>,
 }
 
-#[dto(chat, request, message)]
+#[dto(chat, request)]
+#[actix_message(FetchUserThreadsResponse, FetchUserThreadsMessage)]
 pub struct FetchUserThreadsRequest {
     pub from_user_id: Uuid,
 }
 
-#[dto(chat, request, message)]
+#[dto(chat, request)]
+#[actix_message(FetchThreadResponse, FetchThreadMessage)]
 pub struct FetchThreadRequest {
     pub from_user_id: Uuid,
     pub thread_id: Uuid,
@@ -86,7 +88,8 @@ pub struct FetchThreadResponse {
     pub thread_messages: Vec<OneToManyUpdate<ChatMessage>>,
 }
 
-#[dto(chat, request, message)]
+#[dto(chat, request)]
+#[actix_message(SendMessageResponse, SendMessageMessage)]
 pub struct SendMessageRequest {
     pub from_user_id: Uuid,
     pub message: ChatMessage,

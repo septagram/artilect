@@ -36,6 +36,16 @@ pub enum Error {
     Internal(#[from] anyhow::Error),
 }
 
+pub struct SignedMessage<T> {
+    from: Identity,
+    data: T,
+}
+
+pub enum Identity {
+    User(Uuid),
+    Service(ServiceType),
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait CoercibleResult<T> {

@@ -4,7 +4,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, punctuated::Punctuated, DeriveInput};
+use syn::{parse::Parser, parse_macro_input, punctuated::Punctuated, DeriveInput, Meta};
 
 // Infer
 
@@ -73,7 +73,6 @@ struct DtoFlags {
     pub clone: bool,
     pub request: bool,
     pub response: bool,
-    pub message: bool,
 }
 
 impl Default for DtoFlags {
@@ -84,7 +83,6 @@ impl Default for DtoFlags {
             clone: false,
             request: false,
             response: false,
-            message: false,
         }
     }
 }
@@ -109,7 +107,6 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
             "clone" => flags.clone = true,
             "request" => flags.request = true,
             "response" => flags.response = true,
-            "message" => flags.message = true,
             other => panic!("Unknown flag: {}", other),
         }
     }
@@ -126,6 +123,10 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         syn::Item::Enum(e) => (&mut e.attrs, &e.ident),
         _ => panic!("dto macro only supports structs and enums"),
     };
+    let actix_message_attr = item_attrs
+        .iter()
+        .position(|attr| attr.path().is_ident("actix_message"))
+        .map(|index| item_attrs.remove(index));
 
     if flags.db {
         item_attrs.push(syn::parse_quote! {
@@ -162,31 +163,60 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         });
     }
 
-    if flags.message {
-        // Derive the response type from the struct name by replacing "Request" with "Response"
-        let response_type = if let Some(name_str) = item_ident.to_string().strip_suffix("Request") {
-            let response_ident = syn::Ident::new(&format!("{}Response", name_str), item_ident.span());
-            format!("{}", quote! { crate::service::Result<#response_ident> })
-        } else {
-            panic!("Struct name must end with 'Request' to derive response type automatically");
-        };
-
-        item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_in, derive(actix::Message))]
-        });
-        item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_in, rtype(result = #response_type))]
-        });
-    }
-
     if !universal_derives.is_empty() {
         item_attrs.push(syn::parse_quote! {
             #[derive(#(#universal_derives),*)]
         });
     }
 
-    let output = quote! { #item };
-    TokenStream::from(output)
+    const BASIC_SYNTAX_ERROR: &str = "The actix_message attribute must have the following syntax: #[actix_message(ResponseType[, MessageType])].";
+    let actix_message_output = if let Some(attr) = actix_message_attr {
+        let mut actix_args = match attr.meta {
+            Meta::List(list) => Punctuated
+                ::<syn::Ident, syn::Token![,]>
+                ::parse_separated_nonempty
+                .parse2(list.tokens)
+                .expect(BASIC_SYNTAX_ERROR)
+                .into_iter(),
+            _ => panic!("{}", BASIC_SYNTAX_ERROR),
+        };
+        let response_type = actix_args
+            .next()
+            .expect(format!("Expected response_type as first argument. {}", BASIC_SYNTAX_ERROR).as_str());
+        let message_type = actix_args.next();
+        if actix_args.next().is_some() {
+            panic!("Too many arguments - only response_type and optional message_type allowed. {}", BASIC_SYNTAX_ERROR);
+        }
+
+        let message_impl = quote! {
+            #[cfg(feature = #feature_in)]
+            impl actix::Message for crate::service::SignedMessage<#item_ident> {
+                type Result = crate::service::Result<#response_type>;
+            }
+        };
+
+        let message_definition = match message_type {
+            Some(message_type) => quote! {
+                #[cfg(feature = #feature_in)]
+                pub type #message_type = crate::service::SignedMessage<#item_ident>;
+            },
+            None => quote! {}
+        };
+
+        quote! {
+            #message_impl
+            #message_definition
+        }
+    } else {
+        quote! {}
+    };
+
+    let output = TokenStream::from(quote! {
+        #item
+        #actix_message_output
+    });
+    println!("{}", output);
+    output
 }
 
 #[proc_macro_attribute]
