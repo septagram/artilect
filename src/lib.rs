@@ -15,6 +15,9 @@ pub mod infer;
 #[cfg(feature = "infer")]
 pub mod prompts;
 
+#[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
+mod telegram;
+
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;
 }

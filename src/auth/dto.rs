@@ -1,8 +1,30 @@
-// pub use crate::service;
-// use uuid::Uuid;
-// pub enum Identity {
-//     User(Uuid),
-//     Service(service::Identity),
-// }
+use artilect_macro::dto;
+use serde::{Serialize, Deserialize};
+use uuid::Uuid;
 
-// pub struct Authenticated<T> (pub Identity, pub T);
+#[dto(auth, request)]
+pub enum ChatProvider {
+    Telegram,
+}
+
+#[dto(auth, request)]
+#[actix_message(LoginResponse, LoginMessage)]
+pub struct LoginRequest {
+    pub user_id: Option<Uuid>,
+}
+
+#[dto(auth, response)]
+pub struct LoginResponse {
+    pub attempt_id: Uuid,
+}
+
+#[dto(auth, request)]
+#[actix_message(ConfirmLoginResponse, ConfirmLoginMessage)]
+pub struct ConfirmLoginRequest {
+    pub attempt_id: Uuid,
+    pub provider: ChatProvider,
+    pub external_user_id: Box<str>,
+}
+
+#[dto(auth, response)]
+pub struct ConfirmLoginResponse {}
