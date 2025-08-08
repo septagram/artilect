@@ -4,38 +4,38 @@ use actix::Addr;
 
 use crate::{
     actuators::chat::{
-        back::actor::ChatService,
+        back::actor::ChatPrecept,
         dto::{
             FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
             SendMessageRequest, SendMessageResponse,
         }
     },
-    service,
-    service::ActixResult,
+    precept,
+    precept::ActixResult,
 };
-use crate::service::SignedMessage;
+use crate::precept::SignedMessage;
 
 #[derive(Clone)]
 pub struct ChatClient {
-    actor: Arc<Addr<ChatService>>,
+    actor: Arc<Addr<ChatPrecept>>,
 }
 
 impl ChatClient {
-    pub fn new(addr: Arc<Addr<ChatService>>) -> Self {
+    pub fn new(addr: Arc<Addr<ChatPrecept>>) -> Self {
         Self { actor: addr }
     }
 }
 
 impl super::ChatClientTrait for ChatClient {
-    async fn fetch_user_threads(self: &Self, request: SignedMessage<FetchUserThreadsRequest>) -> service::Result<FetchUserThreadsResponse> {
-        self.actor.send(request).await.into_service_result()
+    async fn fetch_user_threads(self: &Self, request: SignedMessage<FetchUserThreadsRequest>) -> precept::Result<FetchUserThreadsResponse> {
+        self.actor.send(request).await.into_precept_result()
     }
 
-    async fn fetch_thread_messages(self: &Self, request: SignedMessage<FetchThreadRequest>) -> service::Result<FetchThreadResponse> {
-        self.actor.send(request).await.into_service_result()
+    async fn fetch_thread_messages(self: &Self, request: SignedMessage<FetchThreadRequest>) -> precept::Result<FetchThreadResponse> {
+        self.actor.send(request).await.into_precept_result()
     }
 
-    async fn chat(self: &Self, request: SignedMessage<SendMessageRequest>) -> service::Result<SendMessageResponse> {
-        self.actor.send(request).await.into_service_result()
+    async fn chat(self: &Self, request: SignedMessage<SendMessageRequest>) -> precept::Result<SendMessageResponse> {
+        self.actor.send(request).await.into_precept_result()
     }
 }

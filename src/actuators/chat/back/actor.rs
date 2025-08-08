@@ -13,7 +13,7 @@ use crate::{
         SendMessageResponse, SyncUpdate, Thread, User,
     },
     infer::{self, PlainText, RootChain},
-    service::{self, CoercibleResult, SignedMessage, Identity},
+    precept::{self, CoercibleResult, SignedMessage, Identity},
 };
 
 pub struct State {
@@ -22,11 +22,11 @@ pub struct State {
     pub system_prompt: RootChain,
 }
 
-pub struct ChatService {
+pub struct ChatPrecept {
     state: Arc<State>,
 }
 
-impl ChatService {
+impl ChatPrecept {
     pub fn new(pool: PgPool, self_user: User, system_prompt: RootChain) -> Self {
         Self {
             state: Arc::new(State {
@@ -38,16 +38,16 @@ impl ChatService {
     }
 }
 
-impl Actor for ChatService {
+impl Actor for ChatPrecept {
     type Context = actix::Context<Self>;
 }
 
-impl Supervised for ChatService {}
+impl Supervised for ChatPrecept {}
 
 async fn fetch_thread(
     state: &State,
     thread_id: Uuid,
-) -> service::Result<Thread> {
+) -> precept::Result<Thread> {
     let thread = sqlx::query_as!(
         Thread,
         r#"--sql
@@ -59,7 +59,7 @@ async fn fetch_thread(
     )
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| precept::Error::NotFound)?;
     Ok(thread)
 }
 
@@ -67,7 +67,7 @@ pub async fn fetch_thread_for_user(
     state: &State,
     from_user_id: Uuid,
     thread_id: Uuid,
-) -> service::Result<Thread> {
+) -> precept::Result<Thread> {
     let thread = sqlx::query_as!(
         Thread,
         r#"--sql
@@ -81,7 +81,7 @@ pub async fn fetch_thread_for_user(
     )
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| precept::Error::NotFound)?;
     Ok(thread)
 }
 
@@ -129,8 +129,8 @@ async fn create_message(
     thread_id: Uuid,
     message_id: Option<Uuid>,
     message: &str,
-) -> service::Result<(ChatMessage, Thread)> {
-    let mut tx = pool.begin().await.into_service_result()?;
+) -> precept::Result<(ChatMessage, Thread)> {
+    let mut tx = pool.begin().await.into_precept_result()?;
     let is_allowed_to_create_message = match user_id {
         Some(user_id) => sqlx::query!(
             r#"--sql
@@ -143,14 +143,14 @@ async fn create_message(
             user_id,
         )
             .fetch_one(&mut *tx)
-            .await.into_service_result()?
+            .await.into_precept_result()?
             .exists
             .unwrap_or(false),
         None => true,
     };
 
     if !is_allowed_to_create_message {
-        return Err(service::Error::Forbidden);
+        return Err(precept::Error::Forbidden);
         // "User is not a participant in this thread".into(),
     }
 
@@ -168,7 +168,7 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .into_service_result()?;
+        .into_precept_result()?;
 
     let thread = sqlx::query_as!(
         Thread,
@@ -181,9 +181,9 @@ async fn create_message(
     )
         .fetch_one(&mut *tx)
         .await
-        .into_service_result()?;
+        .into_precept_result()?;
 
-    tx.commit().await.into_service_result()?;
+    tx.commit().await.into_precept_result()?;
     Ok((message, thread))
 }
 
@@ -209,7 +209,7 @@ async fn generate_thread_name(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?
+        .map_err(|_| precept::Error::NotFound)?
         .into_iter()
         .map(prompts::MessageLogItem::from)
         .collect::<Vec<_>>();
@@ -261,7 +261,7 @@ async fn generate_thread_name(
 async fn get_thread_message_ids(
     pool: &PgPool,
     thread_id: Uuid,
-) -> service::Result<Vec<Uuid>> {
+) -> precept::Result<Vec<Uuid>> {
     let messages = sqlx::query!(
         r#"--sql
             SELECT id
@@ -273,7 +273,7 @@ async fn get_thread_message_ids(
     )
         .fetch_all(pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| precept::Error::NotFound)?;
     Ok(messages.into_iter().map(|m| m.id).collect())
 }
 
@@ -351,14 +351,14 @@ async fn respond_to_thread(
     }
 }
 
-#[message_handler(ChatService)]
+#[message_handler(ChatPrecept)]
 async fn fetch_user_threads(
     state: &State,
     SignedMessage {
-        from: Identity { user_id, service_type: _ },
+        from: Identity { user_id, precept_id: _ },
         data: _,
     }: SignedMessage<FetchUserThreadsRequest>,
-) -> service::Result<FetchUserThreadsResponse> {
+) -> precept::Result<FetchUserThreadsResponse> {
     let user = sqlx::query_as!(
         User,
         r#"--sql
@@ -370,7 +370,7 @@ async fn fetch_user_threads(
     )
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| precept::Error::NotFound)?;
 
     let threads = sqlx::query_as!(
         Thread,
@@ -385,7 +385,7 @@ async fn fetch_user_threads(
     )
         .fetch_all(&state.pool)
         .await
-        .map_err(|_| service::Error::NotFound)?;
+        .map_err(|_| precept::Error::NotFound)?;
 
     Ok(FetchUserThreadsResponse {
         users: vec![SyncUpdate::Updated(user)],
@@ -399,16 +399,16 @@ async fn fetch_user_threads(
     })
 }
 
-#[message_handler(ChatService)]
+#[message_handler(ChatPrecept)]
 async fn fetch_thread_messages(
     state: &State,
     SignedMessage {
-        from: Identity { user_id, service_type: _ },
+        from: Identity { user_id, precept_id: _ },
         data: FetchThreadRequest {
             thread_id,
         },
     }: SignedMessage<FetchThreadRequest>,
-) -> service::Result<FetchThreadResponse> {
+) -> precept::Result<FetchThreadResponse> {
     let thread = fetch_thread_for_user(state, user_id, thread_id).await?;
     let messages = sqlx::query_as!(
         ChatMessage,
@@ -422,7 +422,7 @@ async fn fetch_thread_messages(
     )
         .fetch_all(&state.pool)
         .await
-        .into_service_result()?;
+        .into_precept_result()?;
 
     Ok(FetchThreadResponse {
         threads: vec![SyncUpdate::Updated(thread)],
@@ -436,14 +436,14 @@ async fn fetch_thread_messages(
     })
 }
 
-#[message_handler(ChatService)]
+#[message_handler(ChatPrecept)]
 async fn chat(
     state: &State,
     SignedMessage {
-        from: Identity { user_id, service_type: _ },
+        from: Identity { user_id, precept_id: _ },
         data: request,
     }: SignedMessage<SendMessageRequest>,
-) -> service::Result<SendMessageResponse> {
+) -> precept::Result<SendMessageResponse> {
     let thread_id = request.message.thread_id;
     if request.is_new_thread {
         create_thread(&state.pool, user_id, thread_id).await?;

@@ -3,22 +3,22 @@ use crate::{
         FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
         SendMessageRequest, SendMessageResponse,
     },
-    service,
+    precept,
 };
 
 pub trait ChatClientTrait {
     async fn fetch_user_threads(
         self: &Self,
-        request: service::SignedMessage<FetchUserThreadsRequest>,
-    ) -> service::Result<FetchUserThreadsResponse>;
+        request: precept::SignedMessage<FetchUserThreadsRequest>,
+    ) -> precept::Result<FetchUserThreadsResponse>;
 
     async fn fetch_thread_messages(
         self: &Self,
-        request: service::SignedMessage<FetchThreadRequest>,
-    ) -> service::Result<FetchThreadResponse>;
+        request: precept::SignedMessage<FetchThreadRequest>,
+    ) -> precept::Result<FetchThreadResponse>;
 
-    async fn chat(self: &Self, request: service::SignedMessage<SendMessageRequest>)
-    -> service::Result<SendMessageResponse>;
+    async fn chat(self: &Self, request: precept::SignedMessage<SendMessageRequest>)
+    -> precept::Result<SendMessageResponse>;
 }
 
 #[cfg(feature = "chat-in")]

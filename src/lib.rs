@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 pub mod actuators;
 pub mod config;
-pub mod service;
+pub mod precept;
 
 #[cfg(any(feature = "auth-in", feature = "auth-out", feature = "auth-front"))]
 pub mod auth;

@@ -12,17 +12,17 @@ use headers::authorization::{Authorization, Bearer};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use super::actor::ChatService;
+use super::actor::ChatPrecept;
 use crate::{
     actuators::chat::dto::{
         FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
         SendMessageRequest, SendMessageResponse,
     },
-    service,
-    service::{ActixResult, SignedMessage, Identity},
+    precept,
+    precept::{ActixResult, SignedMessage, Identity},
 };
 
-pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
+pub fn build_router(state: Arc<Addr<ChatPrecept>>) -> Router {
     // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin("*".parse::<HeaderValue>().unwrap())
@@ -39,57 +39,57 @@ pub fn build_router(state: Arc<Addr<ChatService>>) -> Router {
 }
 
 pub async fn fetch_user_threads_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+    State(precept): State<Arc<Addr<ChatPrecept>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
-) -> service::Result<Json<FetchUserThreadsResponse>> {
-    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    service
+) -> precept::Result<Json<FetchUserThreadsResponse>> {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+    precept
         .send(SignedMessage {
             from: Identity {
                 user_id,
-                service_type: None,
+                precept_id: None,
             },
             data: FetchUserThreadsRequest {},
         })
         .await
-        .into_service_result()
+        .into_precept_result()
         .map(|response| Json(response))
 }
 
 pub async fn fetch_thread_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+    State(precept): State<Arc<Addr<ChatPrecept>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Path(thread_id): Path<Uuid>,
-) -> service::Result<Json<FetchThreadResponse>> {
-    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    service
+) -> precept::Result<Json<FetchThreadResponse>> {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+    precept
         .send(SignedMessage {
             from: Identity {
                 user_id,
-                service_type: None,
+                precept_id: None,
             },
             data: FetchThreadRequest { thread_id },
         })
         .await
-        .into_service_result()
+        .into_precept_result()
         .map(|response| Json(response))
 }
 
 pub async fn chat_handler(
-    State(service): State<Arc<Addr<ChatService>>>,
+    State(precept): State<Arc<Addr<ChatPrecept>>>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(request): Json<SendMessageRequest>,
-) -> service::Result<Json<SendMessageResponse>> {
-    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| service::Error::Unauthorized)?;
-    service
+) -> precept::Result<Json<SendMessageResponse>> {
+    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+    precept
         .send(SignedMessage {
             from: Identity {
                 user_id,
-                service_type: None,
+                precept_id: None,
             },
             data: request,
         })
         .await
-        .into_service_result()
+        .into_precept_result()
         .map(|response| Json(response))
 }

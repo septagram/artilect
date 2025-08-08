@@ -190,15 +190,15 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         let message_impl = quote! {
             #[cfg(feature = #feature_in)]
-            impl actix::Message for crate::service::SignedMessage<#item_ident> {
-                type Result = crate::service::Result<#response_type>;
+            impl actix::Message for crate::precept::SignedMessage<#item_ident> {
+                type Result = crate::precept::Result<#response_type>;
             }
         };
 
         let message_definition = match message_type {
             Some(message_type) => quote! {
                 #[cfg(feature = #feature_in)]
-                pub type #message_type = crate::service::SignedMessage<#item_ident>;
+                pub type #message_type = crate::precept::SignedMessage<#item_ident>;
             },
             None => quote! {}
         };
@@ -221,7 +221,7 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn message_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let service_name = parse_macro_input!(attr as syn::Ident);
+    let precept_name = parse_macro_input!(attr as syn::Ident);
     let function = parse_macro_input!(item as syn::ItemFn);
     let fn_name = &function.sig.ident;
 
@@ -242,7 +242,7 @@ pub fn message_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     let handler = quote! {
         #function
 
-        impl Handler<#arg_type> for #service_name {
+        impl Handler<#arg_type> for #precept_name {
             type Result = actix::ResponseFuture<#return_type>;
 
             fn handle(&mut self, message: #arg_type, _: &mut Self::Context) -> Self::Result {

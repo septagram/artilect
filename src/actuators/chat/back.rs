@@ -11,7 +11,7 @@ mod handlers;
 mod actor;
 pub mod client;
 
-use actor::ChatService;
+use actor::ChatPrecept;
 use crate::infer::{Client, RootChain};
 
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
@@ -65,7 +65,7 @@ pub async fn serve(name: Box<str>, database_url: Box<str>, port: Option<u16>, cl
     let system_prompt = RootChain::from_message(client, crate::prompts::system(AGENT_PROMPT_TEXT));
 
     // Create shared state
-    let actor = ChatService::new(pool, self_user, system_prompt).start();
+    let actor = ChatPrecept::new(pool, self_user, system_prompt).start();
     let state = Arc::new(actor.clone());
 
     let router = handlers::build_router(state);

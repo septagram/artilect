@@ -9,7 +9,7 @@ use serde::Serialize;
 #[allow(unused_imports)]
 use actix::MailboxError;
 
-pub enum ServiceType {
+pub enum PreceptID {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]
     Auth,
     #[cfg(any(feature = "chat-in", feature = "chat-out"))]
@@ -26,7 +26,7 @@ pub enum Error {
     Forbidden,
     #[error("Not Found")]
     NotFound,
-    #[error("Service Unavailable")]
+    #[error("Precept Unavailable")]
     ServiceUnavailable,
     #[error("Invalid Response")]
     InvalidResponse,
@@ -43,37 +43,37 @@ pub struct SignedMessage<T> {
 
 pub struct Identity {
     pub user_id: Uuid,
-    pub service_type: Option<ServiceType>,
+    pub precept_id: Option<PreceptID>,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait CoercibleResult<T> {
-    fn into_service_result(self: Self) -> Result<T>;
+    fn into_precept_result(self: Self) -> Result<T>;
 }
 
 impl<T, E> CoercibleResult<T> for std::result::Result<T, E>
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    fn into_service_result(self: Self) -> Result<T> {
+    fn into_precept_result(self: Self) -> Result<T> {
         self.map_err(|e| anyhow::Error::from(e).into())
     }
 }
 
 #[cfg(feature = "backend")]
 pub trait ActixResult<T> {
-    fn into_service_result(self: Self) -> Result<T>;
+    fn into_precept_result(self: Self) -> Result<T>;
 }
 
 #[cfg(feature = "backend")]
 impl<T> ActixResult<T> for std::result::Result<Result<T>, MailboxError> {
-    fn into_service_result(self: Self) -> Result<T> {
+    fn into_precept_result(self: Self) -> Result<T> {
         match self {
-            Ok(service_response) => match service_response {
+            Ok(precept_response) => match precept_response {
                 Ok(response) => Ok(response),
                 Err(error) => {
-                    tracing::error!("Service error: {:?}", error);
+                    tracing::error!("Precept error: {:?}", error);
                     Err(error)
                 },
             },
