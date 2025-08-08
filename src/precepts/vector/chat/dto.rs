@@ -15,7 +15,7 @@ use crate::Identifiable;
 #[allow(unused_imports)]
 use artilect_macro::Identifiable;
 
-// cargo expand --lib actuators::chat::dto --features="server-http2 chat-in auth-out" 2> /dev/null | head -n 100
+// cargo expand --lib vector::chat::dto --features="server-http2 chat-in auth-out" 2> /dev/null | head -n 100
 #[dto(chat, response)]
 pub enum SyncUpdate<T> {
     Updated(T),

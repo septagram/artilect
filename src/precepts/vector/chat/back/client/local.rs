@@ -3,7 +3,7 @@ use std::sync::Arc;
 use actix::Addr;
 
 use crate::{
-    actuators::chat::{
+    precepts::vector::chat::{
         back::actor::ChatPrecept,
         dto::{
             FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,

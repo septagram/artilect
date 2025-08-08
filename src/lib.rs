@@ -2,21 +2,15 @@
 
 use uuid::Uuid;
 
-pub mod actuators;
 pub mod config;
 pub mod precept;
-
-#[cfg(any(feature = "auth-in", feature = "auth-out", feature = "auth-front"))]
-pub mod auth;
+pub mod precepts;
 
 #[cfg(feature = "infer")]
 pub mod infer;
 
 #[cfg(feature = "infer")]
 pub mod prompts;
-
-#[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
-mod telegram;
 
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;

@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-use crate::actuators::chat::front::{state::State, Route};
+use crate::precepts::vector::chat::front::{state::State, Route};
 
 #[component]
 pub fn SidebarThreadLink(thread_id: Uuid) -> Element {

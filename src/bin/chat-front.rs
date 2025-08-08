@@ -1,7 +1,7 @@
 use dioxus::logger::tracing::Level;
 use dioxus::prelude::*;
 
-use artilect::actuators::chat::front::App;
+use artilect::precepts::vector::chat::front::App;
 
 fn main() {
     dioxus::logger::init(Level::INFO).unwrap();

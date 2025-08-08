@@ -31,7 +31,7 @@ It's currently a work in progress in a very early stage.
    ```
 2. Run the service:
    ```bash
-   cd actuators/chat
+   cd precepts/vector/chat
    cargo run
    ```
 
@@ -40,13 +40,13 @@ It's currently a work in progress in a very early stage.
 Run in web mode:
 
 ```bash
-cd actuators/chat-front
+cd precepts/vector/chat-front
 dx serve --platform=web [--port=1234]
 ```
 
 Or desktop mode:
 
 ```bash
-cd actuators/chat-front
+cd precepts/vector/chat-front
 dx serve --platform=desktop
 ```

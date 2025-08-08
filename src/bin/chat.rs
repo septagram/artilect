@@ -27,5 +27,5 @@ async fn main() {
     };
     let client = artilect::infer::Client::new();
 
-    artilect::actuators::chat::back::serve(name, database_url.into(), port, client).await;
+    artilect::precepts::vector::chat::back::serve(name, database_url.into(), port, client).await;
 }

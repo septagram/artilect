@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::actor::ChatPrecept;
 use crate::{
-    actuators::chat::dto::{
+    precepts::vector::chat::dto::{
         FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
         SendMessageRequest, SendMessageResponse,
     },

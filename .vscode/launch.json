@@ -13,7 +13,7 @@
         //         ]
         //     },
         //     "args": [],
-        //     // "cwd": "${workspaceFolder}/actuators/chat/back"
+        //     // "cwd": "${workspaceFolder}/precepts/vector/chat/back"
         // },
         // ⬆️ Appears intuitive, but doesn't work https://github.com/vadimcn/codelldb/issues/677
         {

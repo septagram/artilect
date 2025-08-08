@@ -1,4 +1,4 @@
-use crate::actuators::chat::dto::{
+use crate::precepts::vector::chat::dto::{
     FetchThreadResponse, FetchUserThreadsResponse, ChatMessage, SendMessageRequest, SendMessageResponse,
 };
 use reqwest::Client;

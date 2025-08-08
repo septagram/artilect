@@ -5,8 +5,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::{consume_sync_update_batch, State, SyncState};
-use crate::actuators::chat::front::api;
-use crate::actuators::chat::dto::{ChatMessage, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
+use crate::precepts::vector::chat::front::api;
+use crate::precepts::vector::chat::dto::{ChatMessage, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
 
 fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T>
 where

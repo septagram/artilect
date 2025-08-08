@@ -18,7 +18,7 @@ enum Route {
     Chat { thread_id: Uuid },
 }
 
-const FAVICON: Asset = asset!("/src/actuators/chat/front/assets/favicon.ico");
+const FAVICON: Asset = asset!("/src/precepts/vector/chat/front/assets/favicon.ico");
 
 #[component]
 pub fn App() -> Element {

@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::prompts;
 use crate::{
-    actuators::chat::dto::{
+    precepts::vector::chat::dto::{
         ChatMessage, FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
         FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
         SendMessageResponse, SyncUpdate, Thread, User,

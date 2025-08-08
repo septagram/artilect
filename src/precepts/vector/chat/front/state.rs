@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub mod actions;
-use crate::actuators::chat::dto::{ChatMessage, SyncUpdate, Thread};
+use crate::precepts::vector::chat::dto::{ChatMessage, SyncUpdate, Thread};
 use crate::Identifiable;
 
 static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
