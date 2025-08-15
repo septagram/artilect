@@ -9,11 +9,22 @@ use serde::Serialize;
 #[allow(unused_imports)]
 use actix::MailboxError;
 
+#[cfg(feature = "backend")]
+pub trait Precept: actix::Actor {
+    const ID: PreceptID;
+    const ROUTE_PREFIX: &'static str;
+    #[cfg(feature = "server-http2")]
+    fn build_router(self) -> axum::Router;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreceptID {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]
     Auth,
     #[cfg(any(feature = "chat-in", feature = "chat-out"))]
-    ChatActuator,
+    Chat,
+    #[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
+    Telegram,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +52,7 @@ pub struct SignedMessage<T> {
     pub data: T,
 }
 
+#[derive(Debug, Clone)]
 pub struct Identity {
     pub user_id: Uuid,
     pub precept_id: Option<PreceptID>,

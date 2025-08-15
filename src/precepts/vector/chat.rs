@@ -5,3 +5,4 @@ pub mod back;
 
 #[cfg(feature = "chat-front")]
 pub mod front;
+pub mod client;

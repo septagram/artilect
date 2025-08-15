@@ -8,8 +8,7 @@ use super::dto::User;
 
 mod prompts;
 mod handlers;
-mod actor;
-pub mod client;
+pub mod actor;
 
 use actor::ChatPrecept;
 use crate::infer::{Client, RootChain};

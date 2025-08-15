@@ -11,6 +11,7 @@ pub mod infer;
 
 #[cfg(feature = "infer")]
 pub mod prompts;
+mod orchestra;
 
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;
