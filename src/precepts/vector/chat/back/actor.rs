@@ -1,7 +1,8 @@
+#![artilect_macro::precept]
+
 use std::{ops::Deref, sync::Arc};
 
 use actix::prelude::*;
-use artilect_macro::message_handler;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -22,11 +23,11 @@ pub struct State {
     pub system_prompt: RootChain,
 }
 
-pub struct ChatPrecept {
+pub struct Precept {
     state: Arc<State>,
 }
 
-impl ChatPrecept {
+impl Precept {
     pub fn new(pool: PgPool, self_user: User, system_prompt: RootChain) -> Self {
         Self {
             state: Arc::new(State {
@@ -38,11 +39,11 @@ impl ChatPrecept {
     }
 }
 
-impl Actor for ChatPrecept {
+impl Actor for Precept {
     type Context = actix::Context<Self>;
 }
 
-impl Supervised for ChatPrecept {}
+impl Supervised for Precept {}
 
 async fn fetch_thread(
     state: &State,

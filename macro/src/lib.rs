@@ -3,9 +3,9 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
-use syn::{parse::Parser, parse_macro_input, punctuated::Punctuated, DeriveInput, Meta, Token};
-use syn::parse::{Parse, ParseStream};
+use quote::{format_ident, quote, ToTokens};
+use syn::{parse_macro_input, parse_quote, punctuated::Punctuated, DeriveInput, Meta, Token};
+use syn::parse::{Parse, Parser, ParseStream};
 
 #[proc_macro_attribute]
 pub fn if_precept(input: TokenStream, item: TokenStream) -> TokenStream {
@@ -254,10 +254,45 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     output
 }
 
+fn take_attribute(attr_name: &str, attrs: &mut Vec<syn::Attribute>) -> Option<syn::Attribute> {
+    attrs
+        .iter()
+        .position(|attr| attr.path().is_ident(attr_name))
+        .map(|pos| {
+            attrs.remove(pos)
+        })
+}
+
 #[proc_macro_attribute]
-pub fn message_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let precept_name = parse_macro_input!(attr as syn::Ident);
-    let function = parse_macro_input!(item as syn::ItemFn);
+pub fn precept(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut module = parse_macro_input!(item as syn::ItemMod);
+    let (brace, mut items) = module.content.take().expect("Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file.");
+    let mut message_handlers = Vec::new();
+    for mut item in &mut items {
+        match &mut item {
+            syn::Item::Struct(resources) if resources.ident == "Resources" => {
+                todo!()
+            },
+            syn::Item::Struct(state) if state.ident == "State" => {
+                // todo!()
+            },
+            syn::Item::Enum(agentic_state) if agentic_state.ident == "AgenticState" => {
+                todo!()
+            },
+            syn::Item::Fn(message_handler) => {
+                if take_attribute("message_handler", &mut message_handler.attrs).is_some() {
+                    message_handlers.push(message_handler_impl(message_handler));
+                }
+            }
+            _ => {},
+        };
+    };
+    items.extend(message_handlers.into_iter().map(|handler| syn::Item::Impl(handler)));
+    module.content = Some((brace, items));
+    module.into_token_stream().into()
+}
+
+fn message_handler_impl(function: &syn::ItemFn) -> syn::ItemImpl {
     let fn_name = &function.sig.ident;
 
     // Get second argument type (the message type)
@@ -274,10 +309,8 @@ pub fn message_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
         _ => panic!("Function must have a return type"),
     };
 
-    let handler = quote! {
-        #function
-
-        impl Handler<#arg_type> for #precept_name {
+    parse_quote! {
+        impl Handler<#arg_type> for Precept {
             type Result = actix::ResponseFuture<#return_type>;
 
             fn handle(&mut self, message: #arg_type, _: &mut Self::Context) -> Self::Result {
@@ -287,9 +320,7 @@ pub fn message_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
                 })
             }
         }
-    };
-
-    TokenStream::from(handler)
+    }
 }
 
 fn capitalize(s: &str) -> String {

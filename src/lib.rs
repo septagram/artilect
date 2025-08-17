@@ -1,4 +1,4 @@
-#![feature(let_chains, str_as_str, error_generic_member_access)]
+#![feature(let_chains, str_as_str, error_generic_member_access, custom_inner_attributes, proc_macro_hygiene)]
 
 use uuid::Uuid;
 

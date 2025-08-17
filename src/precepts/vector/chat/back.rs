@@ -10,7 +10,7 @@ mod prompts;
 mod handlers;
 pub mod actor;
 
-use actor::ChatPrecept;
+use actor::Precept as ChatPrecept;
 use crate::infer::{Client, RootChain};
 
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \

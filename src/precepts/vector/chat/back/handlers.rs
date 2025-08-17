@@ -12,7 +12,7 @@ use headers::authorization::{Authorization, Bearer};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use super::actor::ChatPrecept;
+use super::actor::Precept as ChatPrecept;
 use crate::{
     precepts::vector::chat::dto::{
         FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
