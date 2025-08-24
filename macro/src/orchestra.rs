@@ -1,0 +1,77 @@
+use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::parse::{Parse, ParseStream};
+use syn::{parse_macro_input, punctuated::Punctuated, Token};
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
+    let precepts = parse_macro_input!(input with Punctuated::<PreceptField, syn::Token![,]>::parse_terminated);
+    let mut orchestra_fields = proc_macro2::TokenStream::new();
+    let mut address_book_fields = proc_macro2::TokenStream::new();
+    let mut address_book_converters = proc_macro2::TokenStream::new();
+
+    for p in precepts.iter() {
+        let precept = &p.name;
+        let path = &p.path;
+        let feature_in = format!("{}-in", precept);
+        let feature_out = format!("{}-out", precept);
+        let cfg_block = quote! {
+            #[cfg(any(feature = #feature_in, feature = #feature_out))]
+        };
+        let global_client_ident = format_ident!("Global{}Client", capitalize(precept.to_string().as_str()));
+        let client_ident = format_ident!("{}Client", capitalize(precept.to_string().as_str()));
+        orchestra_fields.extend(cfg_block.clone());
+        orchestra_fields.extend(quote! {
+            #precept: crate::precepts::#path::client::#global_client_ident,
+        });
+        address_book_fields.extend(cfg_block.clone());
+        address_book_fields.extend(quote! {
+            #precept: crate::precepts::#path::client::#client_ident,
+        });
+        address_book_converters.extend(cfg_block);
+        address_book_converters.extend(quote! {
+            #precept: self.#precept.to_client(client_id, token),
+        });
+    }
+
+    let expanded = quote! {
+        pub struct Orchestra {
+            #orchestra_fields
+        }
+
+        impl Orchestra {
+            pub fn to_address_book(&self, client_id: crate::precept::Identity, token: Option<std::sync::Arc<str>>) -> AddressBook {
+                AddressBook {
+                    #address_book_converters
+                }
+            }
+        }
+
+        pub struct AddressBook {
+            #address_book_fields
+        }
+    };
+
+    expanded.into()
+}
+
+struct PreceptField {
+    name: syn::Ident,
+    path: syn::Path,
+}
+
+impl Parse for PreceptField {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let path = input.parse()?;
+        Ok(PreceptField { name, path })
+    }
+}
