@@ -1,4 +1,4 @@
-#![artilect_macro::precept]
+#![artilect_macro::precept(chat)]
 
 use std::{ops::Deref, sync::Arc};
 

@@ -73,6 +73,7 @@ mobile = ["dioxus/mobile"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
+cfg_block = "0.2.0"
 ouroboros = { version = "0.18" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
@@ -111,7 +112,6 @@ axum-extra = { version = "0.10", optional = true, features = ["typed-header"] }
 http = { version = "1.2", optional = true }
 headers = { version = "0.4", optional = true }
 tower-http = { version = "0.5", optional = true, features = ["cors"] }
-async-openai = { version = "0.17", optional = true }
 teloxide = { version = "0.16", optional = true }
 sqlx = { version = "0.8", optional = true, features = [
     "runtime-tokio",

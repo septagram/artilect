@@ -265,8 +265,13 @@ fn take_attribute(attr_name: &str, attrs: &mut Vec<syn::Attribute>) -> Option<sy
 }
 
 #[proc_macro_attribute]
-pub fn precept(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut module = parse_macro_input!(item as syn::ItemMod);
+    let precept_name = if attr.is_empty() {
+        module.ident.clone()
+    } else {
+        parse_macro_input!(attr as syn::Ident)
+    };
     let (brace, mut items) = module.content.take().expect("Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file.");
     let mut message_handlers = Vec::new();
     let mut api_bindings = Vec::new();
@@ -299,6 +304,16 @@ pub fn precept(_attr: TokenStream, item: TokenStream) -> TokenStream {
     if api_bindings.len() == 0 {
         items.push(ApiBindings(api_bindings).into_routable().into());
     }
+
+    let items = vec![
+        parse_quote! {
+            cfg_block::cfg_block! {
+                #[artilect_macro::if_precept_in(#precept_name)] {
+                    #(#items)*
+                }
+            }
+        },
+    ];
 
     module.content = Some((brace, items));
     module.into_token_stream().into()
@@ -445,7 +460,7 @@ impl<I: IntoIterator<Item = ApiBinding>> ApiBindings<I> {
                 }
             }
         }
-    } 
+    }
 }
 
 fn capitalize(s: &str) -> String {
