@@ -104,6 +104,11 @@ impl From<actix::MailboxError> for Error {
     }
 }
 
+#[cfg(feature = "server-http2")]
+pub trait Routable {
+    fn build_router(self) -> axum::Router;
+}
+
 #[cfg(any(feature = "server-http2", feature = "client-http2"))]
 #[cfg_attr(feature = "server-http2", derive(Serialize))]
 #[cfg_attr(feature = "client-http2", derive(Deserialize))]

@@ -2,9 +2,10 @@
 
 extern crate proc_macro;
 
+use std::rc::Rc;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, punctuated::Punctuated, DeriveInput, Meta, Token};
+use syn::{parse_macro_input, parse_quote, punctuated::Punctuated, DeriveInput, ItemFn, Meta, Token};
 use syn::parse::{Parse, Parser, ParseStream};
 
 #[proc_macro_attribute]
@@ -268,6 +269,7 @@ pub fn precept(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut module = parse_macro_input!(item as syn::ItemMod);
     let (brace, mut items) = module.content.take().expect("Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file.");
     let mut message_handlers = Vec::new();
+    let mut api_bindings = Vec::new();
     for mut item in &mut items {
         match &mut item {
             syn::Item::Struct(resources) if resources.ident == "Resources" => {
@@ -279,48 +281,171 @@ pub fn precept(_attr: TokenStream, item: TokenStream) -> TokenStream {
             syn::Item::Enum(agentic_state) if agentic_state.ident == "AgenticState" => {
                 todo!()
             },
-            syn::Item::Fn(message_handler) => {
-                if take_attribute("message_handler", &mut message_handler.attrs).is_some() {
-                    message_handlers.push(message_handler_impl(message_handler));
+            syn::Item::Fn(message_handler_fn) => {
+                if take_attribute("message_handler", &mut message_handler_fn.attrs).is_some() {
+                    let message_handler = MessageHandler::from(&*message_handler_fn);
+                    message_handlers.push(message_handler.to_impl());
+                    if let Some(attr) = take_attribute("api", &mut message_handler_fn.attrs) {
+                        api_bindings.push(ApiBinding::new(message_handler, attr));
+                    }
                 }
             }
             _ => {},
         };
     };
     items.extend(message_handlers.into_iter().map(|handler| syn::Item::Impl(handler)));
+
+    // Process API bindings into the router builder:
+    if api_bindings.len() == 0 {
+        items.push(ApiBindings(api_bindings).into_routable().into());
+    }
+
     module.content = Some((brace, items));
     module.into_token_stream().into()
 }
 
-fn message_handler_impl(function: &syn::ItemFn) -> syn::ItemImpl {
-    let fn_name = &function.sig.ident;
+#[derive(Clone)]
+struct MessageHandler {
+    name: syn::Ident,
+    input: Rc<syn::Type>,
+    output: Rc<syn::Type>,
+}
 
-    // Get second argument type (the message type)
-    let second_arg = function.sig.inputs.iter().nth(1)
-        .expect("Function must have a second argument");
-    let arg_type = match second_arg {
-        syn::FnArg::Typed(pat_type) => &pat_type.ty,
-        _ => panic!("Second argument must be typed"),
-    };
+impl From<&syn::ItemFn> for MessageHandler {
+    fn from(function: &ItemFn) -> Self {
+        let name = function.sig.ident.clone();
 
-    // Get return type
-    let return_type = match &function.sig.output {
-        syn::ReturnType::Type(_, ty) => ty,
-        _ => panic!("Function must have a return type"),
-    };
+        // Get second argument type (the message type)
+        let second_arg = function.sig.inputs.iter().nth(1)
+            .expect("Function must have a second argument");
+        let input = match second_arg {
+            syn::FnArg::Typed(pat_type) => pat_type.ty.clone().into(),
+            _ => panic!("Second argument must be typed"),
+        };
 
-    parse_quote! {
-        impl Handler<#arg_type> for Precept {
-            type Result = actix::ResponseFuture<#return_type>;
+        // Get return type
+        let output = match &function.sig.output {
+            syn::ReturnType::Type(_, ty) => ty.clone().into(),
+            _ => panic!("Function must have a return type"),
+        };
+        
+        Self { name, input, output }
+    }
+}
 
-            fn handle(&mut self, message: #arg_type, _: &mut Self::Context) -> Self::Result {
-                let state = self.state.clone();
-                Box::pin(async move {
-                    #fn_name(&*state, message).await
-                })
+impl MessageHandler {
+    fn to_impl(&self) -> syn::ItemImpl {
+        let MessageHandler { name, input, output } = self;
+    
+        parse_quote! {
+            impl Handler<#input> for Precept {
+                type Result = actix::ResponseFuture<#output>;
+    
+                fn handle(&mut self, message: #input, _: &mut Self::Context) -> Self::Result {
+                    let state = self.state.clone();
+                    Box::pin(async move {
+                        #name(&*state, message).await
+                    })
+                }
             }
         }
     }
+}
+
+struct ApiBinding {
+    owner: MessageHandler,
+    args: ApiBindingArgs,
+}
+
+impl ApiBinding {
+    pub fn new(owner: MessageHandler, input: syn::Attribute) -> Self {
+        let args = input.parse_args().unwrap();
+        ApiBinding { owner, args }
+    }
+}
+
+struct ApiBindingArgs {
+    path: syn::LitStr,
+    method: syn::Ident,
+    transformer: Option<syn::ExprClosure>,
+}
+
+impl Parse for ApiBindingArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let method = input.parse()?;
+        let transformer = match input.parse::<Token![,]>() {
+            Ok(_) => Some(input.parse()?),
+            Err(_) => None,
+        };
+        Ok(ApiBindingArgs { path, method, transformer })
+    }
+}
+
+impl ApiBinding {
+    pub fn into_extend_router_call(self) -> proc_macro2::TokenStream {
+        let Self { owner, args } = self;
+        let MessageHandler { input, output, .. } = owner;
+        let ApiBindingArgs { path, method, transformer } = args;
+        let transformer = transformer.unwrap_or(parse_quote! { |value| value });
+        let syn::ExprClosure { inputs, body, .. } = transformer;
+
+        quote! {
+            .route(#path, #method(
+                |
+                    State(precept): State<Addr<Precept>>,
+                    auth_header: TypedHeader<Authorization<Bearer>>,
+                    #inputs
+                | -> precept::Result<Json<#output>> {
+                    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+                    let data: #input = #body;
+                    precept
+                        .send(SignedMessage {
+                            from: Identity {
+                                user_id,
+                                precept_id: None,
+                            },
+                            data,
+                        })
+                        .await
+                        .into_precept_result()
+                        .map(|response| Json(response))
+                }
+            ))
+        }
+    }
+}
+
+struct ApiBindings<I: IntoIterator<Item = ApiBinding>> (I);
+
+impl<I: IntoIterator<Item = ApiBinding>> ApiBindings<I> {
+    pub fn into_routable(self) -> syn::ItemImpl {
+        let api_binding_tokens = self.0
+            .into_iter()
+            .map(|binding| binding.into_extend_router_call());
+        parse_quote! {
+            #[cfg(feature = "server-http2")]
+            impl precept::Routable for Addr<Precept> {
+                fn build_router(self) -> axum::Router {
+                    use axum::{
+                        routing::*,
+                        extract::{Path, State},
+                        Json,
+                    };
+                    use axum_extra::TypedHeader;
+                    use headers::authorization::{Authorization, Bearer};
+
+                    use crate::{
+                        precept,
+                        precept::{SignedMessage, Identity},
+                    };
+
+                    Router::new()#(#api_binding_tokens)*
+                }
+            }
+        }
+    } 
 }
 
 fn capitalize(s: &str) -> String {
@@ -385,16 +510,14 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
 
 struct PreceptField {
     name: syn::Ident,
-    _colon: Token![:],
     path: syn::Path,
 }
 
 impl Parse for PreceptField {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(PreceptField {
-            name: input.parse()?,
-            _colon: input.parse()?,
-            path: input.parse()?,
-        })
+        let name = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let path = input.parse()?;
+        Ok(PreceptField { name, path })
     }
 }
