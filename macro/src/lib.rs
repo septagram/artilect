@@ -40,6 +40,7 @@ macro_rules! export_macro {
 export_attribute!(precept::if_precept);
 export_attribute!(precept::if_precept_in);
 export_attribute!(precept::if_precept_out);
+export_attribute!(precept::if_precept_front);
 export_attribute!(precept::precept);
 export_derive!(Identifiable, dto::derive_identifiable);
 export_attribute!(dto::dto);

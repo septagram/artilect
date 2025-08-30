@@ -8,7 +8,7 @@ use crate::{
     precept,
     precept::{ActixResult, Identity, PreceptID, SignedMessage},
     precepts::vector::chat::{
-        back::actor::Precept as ChatPrecept,
+        Precept as ChatPrecept,
         dto::{
             FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
             FetchUserThreadsResponse, SendMessageRequest, SendMessageResponse,

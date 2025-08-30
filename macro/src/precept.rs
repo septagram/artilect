@@ -4,38 +4,50 @@ use quote::{quote, ToTokens};
 use syn::{parse_macro_input, parse_quote, ItemFn, Token};
 use syn::parse::{Parse, ParseStream};
 
+fn precept_conditional_compilation_attr(precept_name: &syn::Ident, feature_name: Option<&str>) -> syn::Attribute {
+    match feature_name {
+        Some(feature_name) => {
+            let feature = format!("{}-{}", precept_name, feature_name);
+            parse_quote! {
+                #[cfg(feature = #feature)]
+            }
+        },
+        None => {
+            let feature_in = format!("{}-in", precept_name);
+            let feature_out = format!("{}-out", precept_name);
+            parse_quote! {
+                #[cfg(any(feature = #feature_in, feature = #feature_out))]
+            }
+        },
+    }
+}
+
 pub fn if_precept(input: TokenStream, item: TokenStream) -> TokenStream {
     let precept_name = parse_macro_input!(input as syn::Ident);
-    let feature_in = format!("{}-in", precept_name);
-    let feature_out = format!("{}-out", precept_name);
+    let attr = precept_conditional_compilation_attr(&precept_name, None);
     let item = proc_macro2::TokenStream::from(item);
-    let expanded = quote! {
-        #[cfg(any(feature = #feature_in, feature = #feature_out))]
-        #item
-    };
-    TokenStream::from(expanded)
+    quote! { #attr #item }.into()
 }
 
 pub fn if_precept_in(input: TokenStream, item: TokenStream) -> TokenStream {
     let precept_name = parse_macro_input!(input as syn::Ident);
-    let feature_in = format!("{}-in", precept_name);
+    let attr = precept_conditional_compilation_attr(&precept_name, Some("in"));
     let item = proc_macro2::TokenStream::from(item);
-    let expanded = quote! {
-        #[cfg(feature = #feature_in)]
-        #item
-    };
-    TokenStream::from(expanded)
+    quote! { #attr #item }.into()
 }
 
 pub fn if_precept_out(input: TokenStream, item: TokenStream) -> TokenStream {
     let precept_name = parse_macro_input!(input as syn::Ident);
-    let feature_out = format!("{}-out", precept_name);
+    let attr = precept_conditional_compilation_attr(&precept_name, Some("out"));
     let item = proc_macro2::TokenStream::from(item);
-    let expanded = quote! {
-        #[cfg(feature = #feature_out)]
-        #item
-    };
-    TokenStream::from(expanded)
+    quote! { #attr #item }.into()
+}
+
+pub fn if_precept_front(input: TokenStream, item: TokenStream) -> TokenStream {
+    let precept_name = parse_macro_input!(input as syn::Ident);
+    let attr = precept_conditional_compilation_attr(&precept_name, Some("front"));
+    let item = proc_macro2::TokenStream::from(item);
+    quote! { #attr #item }.into()
 }
 
 fn take_attribute(attr_name: &str, attrs: &mut Vec<syn::Attribute>) -> Option<syn::Attribute> {
@@ -54,32 +66,54 @@ pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else {
         parse_macro_input!(attr as syn::Ident)
     };
-    let (brace, mut items) = module.content.take().expect("Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file.");
+    let (brace, items) = module.content.take().expect(
+        "Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file."
+    );
+    let mut dto_module: Option<syn::ItemMod> = None;
+    let mut front_module: Option<syn::ItemMod> = None;
     let mut message_handlers = Vec::new();
     let mut api_bindings = Vec::new();
-    for mut item in &mut items {
-        match &mut item {
+    let mut items = items.into_iter().filter_map(|item| -> Option<syn::Item> {
+        match item {
+            syn::Item::Mod(module) if module.ident == "dto" => {
+                let prev = dto_module.replace(module);
+                if prev.is_some() {
+                    panic!("Only one dto module is allowed per precept");
+                };
+                None
+            },
+            syn::Item::Mod(module) if module.ident == "front" => {
+                let prev = front_module.replace(module);
+                if prev.is_some() {
+                    panic!("Only one front module is allowed per precept");
+                };
+                None
+            },
             syn::Item::Struct(resources) if resources.ident == "Resources" => {
-                todo!()
+                // todo!()
+                Some(resources.into())
             },
             syn::Item::Struct(state) if state.ident == "State" => {
                 // todo!()
+                Some(state.into())
             },
             syn::Item::Enum(agentic_state) if agentic_state.ident == "AgenticState" => {
-                todo!()
+                // todo!()
+                Some(agentic_state.into())
             },
-            syn::Item::Fn(message_handler_fn) => {
+            syn::Item::Fn(mut message_handler_fn) => {
                 if take_attribute("message_handler", &mut message_handler_fn.attrs).is_some() {
-                    let message_handler = MessageHandler::from(&*message_handler_fn);
+                    let message_handler = MessageHandler::from(&message_handler_fn);
                     message_handlers.push(message_handler.to_impl());
                     if let Some(attr) = take_attribute("api", &mut message_handler_fn.attrs) {
                         api_bindings.push(ApiBinding::new(message_handler, attr));
                     }
-                }
-            }
-            _ => {},
-        };
-    };
+                };
+                Some(message_handler_fn.into())
+            },
+            anything_else => Some(anything_else),
+        }
+    }).collect::<Vec<_>>();
     items.extend(message_handlers.into_iter().map(|handler| syn::Item::Impl(handler)));
 
     // Process API bindings into the router builder:
@@ -87,17 +121,31 @@ pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
         items.push(ApiBindings(api_bindings).into_routable().into());
     }
 
-    let items = vec![
+    let precept_in_attr = precept_conditional_compilation_attr(&precept_name, Some("in"));
+    let mut items = vec![
         parse_quote! {
             cfg_block::cfg_block! {
-                #[artilect_macro::if_precept_in(#precept_name)] {
+                #precept_in_attr {
                     #(#items)*
                 }
             }
         },
     ];
 
+    if let Some(dto_module) = dto_module {
+        items.push(dto_module.into());
+    }
+
+    if let Some(front_module) = front_module {
+        let precept_front_attr = precept_conditional_compilation_attr(&precept_name, Some("front"));
+        items.push(parse_quote! {
+            #precept_front_attr
+            #front_module
+        });
+    }
+
     module.content = Some((brace, items));
+    module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, None));
     module.into_token_stream().into()
 }
 
@@ -135,7 +183,7 @@ impl MessageHandler {
         let MessageHandler { name, input, output } = self;
 
         parse_quote! {
-            impl Handler<#input> for Precept {
+            impl actix::Handler<#input> for Precept {
                 type Result = actix::ResponseFuture<#output>;
 
                 fn handle(&mut self, message: #input, _: &mut Self::Context) -> Self::Result {
@@ -191,7 +239,7 @@ impl ApiBinding {
         quote! {
             .route(#path, #method(
                 |
-                    State(precept): State<Addr<Precept>>,
+                    State(precept): State<actix::Addr<Precept>>,
                     auth_header: TypedHeader<Authorization<Bearer>>,
                     #inputs
                 | -> precept::Result<Json<#output>> {
@@ -223,7 +271,7 @@ impl<I: IntoIterator<Item = ApiBinding>> ApiBindings<I> {
             .map(|binding| binding.into_extend_router_call());
         parse_quote! {
             #[cfg(feature = "server-http2")]
-            impl precept::Routable for Addr<Precept> {
+            impl precept::Routable for actix::Addr<Precept> {
                 fn build_router(self) -> axum::Router {
                     use axum::{
                         routing::*,

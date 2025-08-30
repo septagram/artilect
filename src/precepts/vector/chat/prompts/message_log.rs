@@ -3,7 +3,7 @@ use time::format_description::{self, FormatItem};
 use uuid::Uuid;
 
 use crate::infer;
-use super::super::super::dto::User;
+use super::super::dto::User;
 
 static DATE_FORMAT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
     format_description::parse("[weekday] [year]-[month]-[day]")
