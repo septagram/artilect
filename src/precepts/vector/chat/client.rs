@@ -1,3 +1,4 @@
+use artilect_macro::{if_precept_in, if_precept_out};
 use crate::{
     precepts::vector::chat::dto::{
         FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest, FetchUserThreadsResponse,
@@ -21,18 +22,18 @@ pub trait ChatClientTrait {
     -> impl std::future::Future<Output = precept::Result<SendMessageResponse>>;
 }
 
-#[cfg(feature = "chat-in")]
+#[if_precept_in(chat)]
 pub mod local;
 
-#[cfg(feature = "chat-out")]
+#[if_precept_out(chat)]
 pub mod remote;
 
-#[cfg(feature = "chat-in")]
+#[if_precept_in(chat)]
 pub use local::ChatClient;
 #[cfg(all(feature = "chat-out", not(feature = "chat-in")))]
 pub use remote::ChatClient;
 
-#[cfg(feature = "chat-in")]
+#[if_precept_in(chat)]
 pub use local::GlobalChatClient;
 #[cfg(all(feature = "chat-out", not(feature = "chat-in")))]
 pub use remote::GlobalChatClient;

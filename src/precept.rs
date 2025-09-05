@@ -75,12 +75,12 @@ where
 
 #[cfg(feature = "backend")]
 pub trait ActixResult<T> {
-    fn into_precept_result(self: Self) -> Result<T>;
+    fn map_actix_error(self: Self) -> Result<T>;
 }
 
 #[cfg(feature = "backend")]
 impl<T> ActixResult<T> for std::result::Result<Result<T>, MailboxError> {
-    fn into_precept_result(self: Self) -> Result<T> {
+    fn map_actix_error(self: Self) -> Result<T> {
         match self {
             Ok(precept_response) => match precept_response {
                 Ok(response) => Ok(response),

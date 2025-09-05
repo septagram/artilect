@@ -117,8 +117,8 @@ pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
     items.extend(message_handlers.into_iter().map(|handler| syn::Item::Impl(handler)));
 
     // Process API bindings into the router builder:
-    if api_bindings.len() == 0 {
-        items.push(ApiBindings(api_bindings).into_routable().into());
+    if api_bindings.len() != 0 {
+        items.extend(ApiBindings(api_bindings).into_routable());
     }
 
     let precept_in_attr = precept_conditional_compilation_attr(&precept_name, Some("in"));
@@ -156,6 +156,29 @@ struct MessageHandler {
     output: Rc<syn::Type>,
 }
 
+fn unpack_generic(ty: &syn::Type, expected_type: &str, checked_value: &str) -> Rc<syn::Type> {
+    let type_path = match ty {
+        syn::Type::Path(type_path)
+        if type_path
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident == expected_type)
+            .unwrap_or(false)
+        => type_path,
+        _ => panic!("{} must be {}<T>", checked_value, expected_type),
+    };
+    let syn::PathArguments::AngleBracketed(args) =
+        &type_path.path.segments.last().unwrap().arguments
+    else {
+        panic!("{} must have angle bracketed type parameters", expected_type);
+    };
+    match args.args.first() {
+        Some(syn::GenericArgument::Type(inner_type)) => inner_type.clone().into(),
+        _ => panic!("{} must have a type parameter", expected_type),
+    }
+}
+
 impl From<&syn::ItemFn> for MessageHandler {
     fn from(function: &ItemFn) -> Self {
         let name = function.sig.ident.clone();
@@ -163,14 +186,16 @@ impl From<&syn::ItemFn> for MessageHandler {
         // Get second argument type (the message type)
         let second_arg = function.sig.inputs.iter().nth(1)
             .expect("Function must have a second argument");
-        let input = match second_arg {
-            syn::FnArg::Typed(pat_type) => pat_type.ty.clone().into(),
-            _ => panic!("Second argument must be typed"),
+        let input = {
+            let syn::FnArg::Typed(pat_type) = second_arg else {
+                panic!("Second argument must be typed");
+            };
+            unpack_generic(&pat_type.ty, "SignedMessage", "Second argument")
         };
 
         // Get return type
         let output = match &function.sig.output {
-            syn::ReturnType::Type(_, ty) => ty.clone().into(),
+            syn::ReturnType::Type(_, ty) => unpack_generic(ty, "Result", "Return type"),
             _ => panic!("Function must have a return type"),
         };
 
@@ -183,10 +208,10 @@ impl MessageHandler {
         let MessageHandler { name, input, output } = self;
 
         parse_quote! {
-            impl actix::Handler<#input> for Precept {
-                type Result = actix::ResponseFuture<#output>;
+            impl actix::Handler<crate::precept::SignedMessage<#input>> for Precept {
+                type Result = actix::ResponseFuture<crate::precept::Result<#output>>;
 
-                fn handle(&mut self, message: #input, _: &mut Self::Context) -> Self::Result {
+                fn handle(&mut self, message: crate::precept::SignedMessage<#input>, _: &mut Self::Context) -> Self::Result {
                     let state = self.state.clone();
                     Box::pin(async move {
                         #name(&*state, message).await
@@ -229,47 +254,54 @@ impl Parse for ApiBindingArgs {
 }
 
 impl ApiBinding {
-    pub fn into_extend_router_call(self) -> proc_macro2::TokenStream {
+    pub fn to_extend_router_call(&self) -> proc_macro2::TokenStream {
         let Self { owner, args } = self;
-        let MessageHandler { input, output, .. } = owner;
-        let ApiBindingArgs { path, method, transformer } = args;
-        let transformer = transformer.unwrap_or(parse_quote! { |value| value });
+        let MessageHandler { name, .. } = owner;
+        let ApiBindingArgs { path, method, .. } = args;
+
+        quote_spanned! { name.span() =>
+            .route(#path, #method(axum_handlers::#name))
+        }
+    }
+
+    pub fn into_handler_callback_impl(self) -> proc_macro2::TokenStream {
+        let Self { owner, args } = self;
+        let MessageHandler { name, input, output } = owner;
+        let transformer = args.transformer.unwrap_or(parse_quote! { |Json(request): Json<#input>| request });
         let syn::ExprClosure { inputs, body, .. } = transformer;
 
         quote! {
-            .route(#path, #method(
-                |
-                    State(precept): State<actix::Addr<Precept>>,
-                    auth_header: TypedHeader<Authorization<Bearer>>,
-                    #inputs
-                | -> precept::Result<Json<#output>> {
-                    let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
-                    let data: #input = #body;
-                    precept
-                        .send(SignedMessage {
-                            from: Identity {
-                                user_id,
-                                precept_id: None,
-                            },
-                            data,
-                        })
-                        .await
-                        .into_precept_result()
-                        .map(|response| Json(response))
-                }
-            ))
+            pub async fn #name(
+                State(precept): State<actix::Addr<Precept>>,
+                auth_header: TypedHeader<Authorization<Bearer>>,
+                #inputs
+            ) -> precept::Result<Json<#output>> {
+                let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+                let data: #input = #body;
+                precept
+                    .send(SignedMessage {
+                        from: Identity {
+                            user_id,
+                            precept_id: None,
+                        },
+                        data,
+                    })
+                    .await
+                    .map_actix_error()
+                    .map(|response| Json(response))
+            }
         }
     }
 }
 
-struct ApiBindings<I: IntoIterator<Item = ApiBinding>> (I);
+struct ApiBindings(Vec<ApiBinding>);
 
-impl<I: IntoIterator<Item = ApiBinding>> ApiBindings<I> {
-    pub fn into_routable(self) -> syn::ItemImpl {
+impl ApiBindings {
+    pub fn into_routable(self) -> [syn::Item; 2] {
         let api_binding_tokens = self.0
-            .into_iter()
-            .map(|binding| binding.into_extend_router_call());
-        parse_quote! {
+            .iter()
+            .map(|binding| binding.to_extend_router_call());
+        let routable_impl = parse_quote! {
             #[cfg(feature = "server-http2")]
             impl precept::Routable for actix::Addr<Precept> {
                 fn build_router(self) -> axum::Router {
@@ -286,9 +318,34 @@ impl<I: IntoIterator<Item = ApiBinding>> ApiBindings<I> {
                         precept::{SignedMessage, Identity},
                     };
 
-                    Router::new()#(#api_binding_tokens)*
+                    Router::new()#(#api_binding_tokens)*.with_state(self)
                 }
             }
-        }
+        };
+
+        let handler_impls = self.0
+            .into_iter()
+            .map(|binding| binding.into_handler_callback_impl());
+
+        [routable_impl, parse_quote! {
+            #[cfg(feature = "server-http2")]
+            mod axum_handlers {
+                use super::*;
+                use axum::{
+                    routing::*,
+                    extract::{Path, State},
+                    Json,
+                };
+                use axum_extra::TypedHeader;
+                use headers::authorization::{Authorization, Bearer};
+
+                use crate::{
+                    precept,
+                    precept::{SignedMessage, Identity, ActixResult},
+                };
+
+                #(#handler_impls)*
+            }
+        }]
     }
 }

@@ -394,6 +394,7 @@ async fn respond_to_thread(
 }
 
 #[message_handler(ChatPrecept)]
+#[api("/chats", get, || dto::FetchUserThreadsRequest {})]
 async fn fetch_user_threads(
     state: &State,
     SignedMessage {
@@ -442,6 +443,7 @@ async fn fetch_user_threads(
 }
 
 #[message_handler(ChatPrecept)]
+#[api("/chat/{thread_id}", get, |Path(thread_id): Path<Uuid>| dto::FetchThreadRequest { thread_id })]
 async fn fetch_thread_messages(
     state: &State,
     SignedMessage {
@@ -479,6 +481,7 @@ async fn fetch_thread_messages(
 }
 
 #[message_handler(ChatPrecept)]
+#[api("/chat", post)]
 async fn chat(
     state: &State,
     SignedMessage {

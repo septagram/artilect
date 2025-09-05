@@ -65,7 +65,7 @@ impl super::ChatClientTrait for ChatClient {
                 data: request,
             })
             .await
-            .into_precept_result()
+            .map_actix_error()
     }
 
     async fn fetch_thread_messages(
@@ -80,7 +80,7 @@ impl super::ChatClientTrait for ChatClient {
                 data: request,
             })
             .await
-            .into_precept_result()
+            .map_actix_error()
     }
 
     async fn chat(
@@ -95,6 +95,6 @@ impl super::ChatClientTrait for ChatClient {
                 data: request,
             })
             .await
-            .into_precept_result()
+            .map_actix_error()
     }
 }
