@@ -9,6 +9,7 @@ use syn::{parse_macro_input, DeriveInput};
 mod precept;
 mod dto;
 mod orchestra;
+mod util;
 
 macro_rules! export_attribute {
     ($module:ident::$func:ident) => {
@@ -42,6 +43,8 @@ export_attribute!(precept::if_precept_in);
 export_attribute!(precept::if_precept_out);
 export_attribute!(precept::if_precept_front);
 export_attribute!(precept::precept);
+export_attribute!(precept::precept_message);
+export_macro!(precept::route_callback);
 export_derive!(Identifiable, dto::derive_identifiable);
 export_attribute!(dto::dto);
 export_macro!(orchestra::orchestra_from_precepts);

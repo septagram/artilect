@@ -1,4 +1,4 @@
-#![feature(let_chains, str_as_str, error_generic_member_access, custom_inner_attributes, proc_macro_hygiene)]
+#![feature(str_as_str, error_generic_member_access, custom_inner_attributes, proc_macro_hygiene)]
 
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ pub mod infer;
 
 #[cfg(feature = "infer")]
 pub mod prompts;
-mod orchestra;
+pub mod orchestra;
 
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;

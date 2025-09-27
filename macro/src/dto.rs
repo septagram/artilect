@@ -4,6 +4,8 @@ use syn::{parse_macro_input, Meta};
 use syn::punctuated::Punctuated;
 use syn::parse::Parser;
 
+use crate::util::take_attribute;
+
 pub fn derive_identifiable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::DeriveInput);
     let name = &input.ident;
@@ -75,10 +77,7 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         syn::Item::Enum(e) => (&mut e.attrs, &e.ident),
         _ => panic!("dto macro only supports structs and enums"),
     };
-    let actix_message_attr = item_attrs
-        .iter()
-        .position(|attr| attr.path().is_ident("actix_message"))
-        .map(|index| item_attrs.remove(index));
+    let actix_message_attr = take_attribute("message", item_attrs);
 
     if flags.db {
         item_attrs.push(syn::parse_quote! {
@@ -141,9 +140,8 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         let message_impl = quote! {
-            #[cfg(feature = #feature_in)]
-            impl actix::Message for crate::precept::SignedMessage<#item_ident> {
-                type Result = crate::precept::Result<#response_type>;
+            impl crate::precept::Message for #item_ident {
+                type Response = #response_type;
             }
         };
 

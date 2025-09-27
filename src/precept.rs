@@ -1,21 +1,14 @@
 use serde::Deserialize;
 use uuid::Uuid;
-
+pub mod client;
 #[cfg(feature = "backend")]
-#[allow(unused_imports)]
+mod local;
+
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 #[cfg(feature = "backend")]
-#[allow(unused_imports)]
-use actix::MailboxError;
-
-#[cfg(feature = "backend")]
-pub trait Precept: actix::Actor {
-    const ID: PreceptID;
-    const ROUTE_PREFIX: &'static str;
-    #[cfg(feature = "server-http2")]
-    fn build_router(self) -> axum::Router;
-}
+pub use local::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreceptID {
@@ -58,6 +51,22 @@ pub struct Identity {
     pub precept_id: Option<PreceptID>,
 }
 
+pub trait Message: Send + Sync + 'static {
+    type Response: Send + Sync + 'static;
+}
+
+#[cfg(feature = "backend")]
+pub trait MessageLocalStrategy<P: Precept>: Message {
+    #[cfg(feature = "server-http2")]
+    fn route(router: axum::Router<actix::Addr<P>>) -> axum::Router<actix::Addr<P>>;
+    fn handle(resources: &P::Resources, from: Identity, message: Self) -> impl Future<Output = Result<Self::Response>>;
+}
+
+#[cfg(feature = "client-http2")]
+pub trait MessageRemoteStrategy: Message {
+    fn into_request(self) -> reqwest::RequestBuilder;
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub trait CoercibleResult<T> {
@@ -71,42 +80,6 @@ where
     fn into_precept_result(self: Self) -> Result<T> {
         self.map_err(|e| anyhow::Error::from(e).into())
     }
-}
-
-#[cfg(feature = "backend")]
-pub trait ActixResult<T> {
-    fn map_actix_error(self: Self) -> Result<T>;
-}
-
-#[cfg(feature = "backend")]
-impl<T> ActixResult<T> for std::result::Result<Result<T>, MailboxError> {
-    fn map_actix_error(self: Self) -> Result<T> {
-        match self {
-            Ok(precept_response) => match precept_response {
-                Ok(response) => Ok(response),
-                Err(error) => {
-                    tracing::error!("Precept error: {:?}", error);
-                    Err(error)
-                },
-            },
-            Err(error) => {
-                tracing::error!("Mailbox error: {:?}", error);
-                Err(Error::ServiceUnavailable)
-            },
-        }
-    }
-}
-
-#[cfg(feature = "backend")]
-impl From<actix::MailboxError> for Error {
-    fn from(_: actix::MailboxError) -> Self {
-        Error::ServiceUnavailable
-    }
-}
-
-#[cfg(feature = "server-http2")]
-pub trait Routable {
-    fn build_router(self) -> axum::Router;
 }
 
 #[cfg(any(feature = "server-http2", feature = "client-http2"))]
@@ -136,29 +109,3 @@ impl axum::response::IntoResponse for Error {
         }
     }
 }
-
-// #[cfg(feature = "client-http2")]
-// impl From<reqwest::Error> for Error {
-//     fn from(error: reqwest::Error) -> Self {
-//         if error.is_connect() {
-//             Error::ServiceUnavailable
-//         } else if let Some(status) = error.status() {
-//             match status.as_u16() {
-//                 // 400 => ServiceError::BadRequest(error.json::<serde_json::Value>().await.map_or_else(
-//                 //     |_| error.to_string().into(),
-//                 //     |json| json.get("error").and_then(|e| e.as_str()).unwrap_or_default().into()
-//                 // )),
-//                 400 => Error::BadRequest(Box::from("(parsing not implemented)")),
-//                 401 => Error::Unauthorized,
-//                 403 => Error::Forbidden,
-//                 404 => Error::NotFound,
-//                 500 => Error::Internal,
-//                 501 => Error::NotImplemented,
-//                 503 => Error::ServiceUnavailable,
-//                 _ => Error::InvalidResponse
-//             }
-//         } else {
-//             Error::InvalidResponse
-//         }
-//     }
-// }

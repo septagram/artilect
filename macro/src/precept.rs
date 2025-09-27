@@ -1,8 +1,10 @@
-use std::rc::Rc;
+use std::path::MAIN_SEPARATOR;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, ItemFn, Token};
-use syn::parse::{Parse, ParseStream};
+use syn::{parse_macro_input, parse_quote};
+use syn::punctuated::Punctuated;
+
+use crate::util::unpack_generic;
 
 fn precept_conditional_compilation_attr(precept_name: &syn::Ident, feature_name: Option<&str>) -> syn::Attribute {
     match feature_name {
@@ -50,302 +52,182 @@ pub fn if_precept_front(input: TokenStream, item: TokenStream) -> TokenStream {
     quote! { #attr #item }.into()
 }
 
-fn take_attribute(attr_name: &str, attrs: &mut Vec<syn::Attribute>) -> Option<syn::Attribute> {
-    attrs
-        .iter()
-        .position(|attr| attr.path().is_ident(attr_name))
-        .map(|pos| {
-            attrs.remove(pos)
-        })
+fn current_file_path() -> Box<str> {
+    let span = proc_macro2::Span::call_site();
+    let local_file = span.local_file().unwrap();
+    let mod_path = local_file.as_path();
+    let mod_filename = mod_path.to_str().unwrap();
+    Box::from(mod_filename)
 }
 
-pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut module = parse_macro_input!(item as syn::ItemMod);
-    let precept_name = if attr.is_empty() {
-        module.ident.clone()
-    } else {
-        parse_macro_input!(attr as syn::Ident)
+fn get_precept_ident() -> syn::Ident {
+    let current_file_path = current_file_path();
+    let mut split_path: Vec<&str> = current_file_path.split(MAIN_SEPARATOR).collect();
+    split_path.push(split_path.last().unwrap().split('.').next().unwrap());
+    let pos = split_path.iter().position(|cur| *cur == "local").unwrap_or(0);
+    if pos == 0 {
+        panic!("Could not find precept name in file path");
     };
-    let (brace, items) = module.content.take().expect(
+    let precept_name = split_path[pos - 1];
+    syn::Ident::new(precept_name, proc_macro2::Span::call_site())
+}
+
+// Must be applied to both a precept module and a precept struct
+pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as syn::Item);
+    match item {
+        syn::Item::Mod(module) => precept_mod(attr, module),
+        syn::Item::Struct(struct_def) => precept_struct(attr, struct_def),
+        _ => panic!("Precept macro accepts only modules and structs"),
+    }
+}
+
+// - Add correct conditional compilation attributes onto a precept module and its submodules
+pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
+    let precept_name = module.ident.clone();
+    let (brace, mut items) = module.content.take().expect(
         "Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file."
     );
-    let mut dto_module: Option<syn::ItemMod> = None;
-    let mut front_module: Option<syn::ItemMod> = None;
-    let mut message_handlers = Vec::new();
-    let mut api_bindings = Vec::new();
-    let mut items = items.into_iter().filter_map(|item| -> Option<syn::Item> {
+    for item in items.iter_mut() {
         match item {
-            syn::Item::Mod(module) if module.ident == "dto" => {
-                let prev = dto_module.replace(module);
-                if prev.is_some() {
-                    panic!("Only one dto module is allowed per precept");
-                };
-                None
-            },
-            syn::Item::Mod(module) if module.ident == "front" => {
-                let prev = front_module.replace(module);
-                if prev.is_some() {
-                    panic!("Only one front module is allowed per precept");
-                };
-                None
-            },
-            syn::Item::Struct(resources) if resources.ident == "Resources" => {
-                // todo!()
-                Some(resources.into())
-            },
-            syn::Item::Struct(state) if state.ident == "State" => {
-                // todo!()
-                Some(state.into())
-            },
-            syn::Item::Enum(agentic_state) if agentic_state.ident == "AgenticState" => {
-                // todo!()
-                Some(agentic_state.into())
-            },
-            syn::Item::Fn(mut message_handler_fn) => {
-                if take_attribute("message_handler", &mut message_handler_fn.attrs).is_some() {
-                    let message_handler = MessageHandler::from(&message_handler_fn);
-                    message_handlers.push(message_handler.to_impl());
-                    if let Some(attr) = take_attribute("api", &mut message_handler_fn.attrs) {
-                        api_bindings.push(ApiBinding::new(message_handler, attr));
-                    }
-                };
-                Some(message_handler_fn.into())
-            },
-            anything_else => Some(anything_else),
-        }
-    }).collect::<Vec<_>>();
-    items.extend(message_handlers.into_iter().map(|handler| syn::Item::Impl(handler)));
-
-    // Process API bindings into the router builder:
-    if api_bindings.len() != 0 {
-        items.extend(ApiBindings(api_bindings).into_routable());
-    }
-
-    let precept_in_attr = precept_conditional_compilation_attr(&precept_name, Some("in"));
-    let mut items = vec![
-        parse_quote! {
-            cfg_block::cfg_block! {
-                #precept_in_attr {
-                    #(#items)*
+            syn::Item::Mod(inner_module) => {
+                match inner_module.ident.to_string().as_str() {
+                    "local" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("in"))),
+                    "remote" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("out"))),
+                    "front" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("front"))),
+                    _ => {},
                 }
+            },
+            _ => {},
+        }
+    }
+    let feature_in = format!("{}-in", precept_name);
+    let feature_out = format!("{}-out", precept_name);
+    items.push(parse_quote! {
+        cfg_block::cfg_block! {
+            #[cfg(all(feature = #feature_in, not(feature = #feature_out)))] {
+                pub type Addr = crate::precept::client::AddrLocal<local::Precept>;
+                pub type Client = crate::precept::client::ClientLocal<local::Precept>;
             }
-        },
-    ];
-
-    if let Some(dto_module) = dto_module {
-        items.push(dto_module.into());
-    }
-
-    if let Some(front_module) = front_module {
-        let precept_front_attr = precept_conditional_compilation_attr(&precept_name, Some("front"));
-        items.push(parse_quote! {
-            #precept_front_attr
-            #front_module
-        });
-    }
-
+            
+            #[cfg(all(not(feature = #feature_in), feature = #feature_out))] {
+                pub type Addr = crate::precept::client::AddrRemote;
+                pub type Client = crate::precept::client::ClientRemote;
+            }
+            
+            #[cfg(all(feature = #feature_in, feature = #feature_out))] {
+                pub type Addr = crate::precept::client::Addr<local::Precept>;
+                pub type Client = crate::precept::client::Client<local::Precept>;
+            }
+        }
+    });
     module.content = Some((brace, items));
     module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, None));
     module.into_token_stream().into()
 }
 
-#[derive(Clone)]
-struct MessageHandler {
-    name: syn::Ident,
-    input: Rc<syn::Type>,
-    output: Rc<syn::Type>,
-}
-
-fn unpack_generic(ty: &syn::Type, expected_type: &str, checked_value: &str) -> Rc<syn::Type> {
-    let type_path = match ty {
-        syn::Type::Path(type_path)
-        if type_path
-            .path
-            .segments
-            .last()
-            .map(|s| s.ident == expected_type)
-            .unwrap_or(false)
-        => type_path,
-        _ => panic!("{} must be {}<T>", checked_value, expected_type),
-    };
-    let syn::PathArguments::AngleBracketed(args) =
-        &type_path.path.segments.last().unwrap().arguments
-    else {
-        panic!("{} must have angle bracketed type parameters", expected_type);
-    };
-    match args.args.first() {
-        Some(syn::GenericArgument::Type(inner_type)) => inner_type.clone().into(),
-        _ => panic!("{} must have a type parameter", expected_type),
+// - Combine all the Add message routes into the precept router
+// - Implement Precept trait
+pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenStream {
+    let struct_name = struct_def.ident.clone();
+    let message_types = parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_separated_nonempty);
+    println!("ok");
+    let message_type_iter = message_types.iter();
+    let mut resources_type = None;
+    for field in struct_def.fields.iter() {
+        match field.ident.as_ref().unwrap().to_string().as_str() {
+            "resources" => {
+                resources_type = Some(unpack_generic(&field.ty, "Arc", "resources"));
+            },
+            _ => {},
+        }
     }
+    let resources_type = resources_type.expect("Precept struct must have a field named `resources`");
+    quote! {
+        #struct_def
+
+        impl crate::precept::Precept for #struct_name {
+            type Resources = #resources_type;
+        }
+
+        impl actix::Actor for #struct_name {
+            type Context = actix::Context<Self>;
+        }
+
+        impl actix::Supervised for #struct_name {}
+
+        impl crate::precept::Routable for actix::Addr<#struct_name> {
+            fn build_router(self) -> axum::Router {
+                let mut router = axum::Router::new();
+                #(router = #message_type_iter::route(router);)*
+                router.with_state(self)
+            }
+        }
+
+        impl <M> actix::Handler<SignedMessage<M>> for #struct_name
+        where
+            M: crate::precept::MessageLocalStrategy<#struct_name>,
+        {
+            type Result = actix::ResponseFuture<crate::precept::Result<M::Response>>;
+
+            fn handle(&mut self, message: crate::precept::SignedMessage<M>, _: &mut Self::Context) -> Self::Result {
+                let resources = self.resources.clone();
+                Box::pin(async move {
+                    M::handle(&*resources, message.from, message.data).await
+                })
+            }
+        }
+    }.into()
 }
 
-impl From<&syn::ItemFn> for MessageHandler {
-    fn from(function: &ItemFn) -> Self {
-        let name = function.sig.ident.clone();
-
-        // Get second argument type (the message type)
-        let second_arg = function.sig.inputs.iter().nth(1)
-            .expect("Function must have a second argument");
-        let input = {
-            let syn::FnArg::Typed(pat_type) = second_arg else {
-                panic!("Second argument must be typed");
-            };
-            unpack_generic(&pat_type.ty, "SignedMessage", "Second argument")
-        };
-
-        // Get return type
-        let output = match &function.sig.output {
-            syn::ReturnType::Type(_, ty) => unpack_generic(ty, "Result", "Return type"),
-            _ => panic!("Function must have a return type"),
-        };
-
-        Self { name, input, output }
-    }
-}
-
-impl MessageHandler {
-    fn to_impl(&self) -> syn::ItemImpl {
-        let MessageHandler { name, input, output } = self;
-
-        parse_quote! {
-            impl actix::Handler<crate::precept::SignedMessage<#input>> for Precept {
-                type Result = actix::ResponseFuture<crate::precept::Result<#output>>;
-
-                fn handle(&mut self, message: crate::precept::SignedMessage<#input>, _: &mut Self::Context) -> Self::Result {
-                    let state = self.state.clone();
-                    Box::pin(async move {
-                        #name(&*state, message).await
-                    })
+pub fn precept_message(_: TokenStream, item: TokenStream) -> TokenStream {
+    let mut item = parse_macro_input!(item as syn::ItemImpl);
+    for item in item.items.iter_mut() {
+        match item {
+            syn::ImplItem::Fn(fn_impl) => {
+                match fn_impl.sig.ident.to_string().as_str() {
+                    "route" => fn_impl.attrs.insert(0, parse_quote! { #[cfg(feature = "server-http2")] }),
+                    _ => {},
                 }
-            }
+            },
+            _ => {},
         }
-    }
+    };
+    item.into_token_stream().into()
 }
 
-struct ApiBinding {
-    owner: MessageHandler,
-    args: ApiBindingArgs,
-}
+pub fn route_callback(item: TokenStream) -> TokenStream {
+    let transformer = if !item.is_empty() {
+        parse_macro_input!(item as syn::ExprClosure)
+    } else {
+        parse_quote! { |axum::Json(request): axum::Json<Self>| request }
+    };
+    let syn::ExprClosure { inputs, body, .. } = transformer;
 
-impl ApiBinding {
-    pub fn new(owner: MessageHandler, input: syn::Attribute) -> Self {
-        let args = input.parse_args().unwrap();
-        ApiBinding { owner, args }
-    }
-}
-
-struct ApiBindingArgs {
-    path: syn::LitStr,
-    method: syn::Ident,
-    transformer: Option<syn::ExprClosure>,
-}
-
-impl Parse for ApiBindingArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let path = input.parse()?;
-        input.parse::<Token![,]>()?;
-        let method = input.parse()?;
-        let transformer = match input.parse::<Token![,]>() {
-            Ok(_) => Some(input.parse()?),
-            Err(_) => None,
-        };
-        Ok(ApiBindingArgs { path, method, transformer })
-    }
-}
-
-impl ApiBinding {
-    pub fn to_extend_router_call(&self) -> proc_macro2::TokenStream {
-        let Self { owner, args } = self;
-        let MessageHandler { name, .. } = owner;
-        let ApiBindingArgs { path, method, .. } = args;
-
-        quote_spanned! { name.span() =>
-            .route(#path, #method(axum_handlers::#name))
+    quote! {
+        async |
+            axum::extract::State(precept): axum::extract::State<actix::Addr<Precept>>,
+            auth_header: axum_extra::TypedHeader<
+                headers::authorization::Authorization<
+                    headers::authorization::Bearer
+                >
+            >,
+            #inputs
+        | -> precept::Result<axum::Json<Self::Response>> {
+            use crate::precept::ActixResult;
+            let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
+            let data: Self = #body;
+            precept
+                .send(SignedMessage {
+                    from: Identity {
+                        user_id,
+                        precept_id: None,
+                    },
+                    data,
+                })
+                .await
+                .map_actix_error()
+                .map(|response| axum::Json(response))
         }
-    }
-
-    pub fn into_handler_callback_impl(self) -> proc_macro2::TokenStream {
-        let Self { owner, args } = self;
-        let MessageHandler { name, input, output } = owner;
-        let transformer = args.transformer.unwrap_or(parse_quote! { |Json(request): Json<#input>| request });
-        let syn::ExprClosure { inputs, body, .. } = transformer;
-
-        quote! {
-            pub async fn #name(
-                State(precept): State<actix::Addr<Precept>>,
-                auth_header: TypedHeader<Authorization<Bearer>>,
-                #inputs
-            ) -> precept::Result<Json<#output>> {
-                let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
-                let data: #input = #body;
-                precept
-                    .send(SignedMessage {
-                        from: Identity {
-                            user_id,
-                            precept_id: None,
-                        },
-                        data,
-                    })
-                    .await
-                    .map_actix_error()
-                    .map(|response| Json(response))
-            }
-        }
-    }
-}
-
-struct ApiBindings(Vec<ApiBinding>);
-
-impl ApiBindings {
-    pub fn into_routable(self) -> [syn::Item; 2] {
-        let api_binding_tokens = self.0
-            .iter()
-            .map(|binding| binding.to_extend_router_call());
-        let routable_impl = parse_quote! {
-            #[cfg(feature = "server-http2")]
-            impl precept::Routable for actix::Addr<Precept> {
-                fn build_router(self) -> axum::Router {
-                    use axum::{
-                        routing::*,
-                        extract::{Path, State},
-                        Json,
-                    };
-                    use axum_extra::TypedHeader;
-                    use headers::authorization::{Authorization, Bearer};
-
-                    use crate::{
-                        precept,
-                        precept::{SignedMessage, Identity},
-                    };
-
-                    Router::new()#(#api_binding_tokens)*.with_state(self)
-                }
-            }
-        };
-
-        let handler_impls = self.0
-            .into_iter()
-            .map(|binding| binding.into_handler_callback_impl());
-
-        [routable_impl, parse_quote! {
-            #[cfg(feature = "server-http2")]
-            mod axum_handlers {
-                use super::*;
-                use axum::{
-                    routing::*,
-                    extract::{Path, State},
-                    Json,
-                };
-                use axum_extra::TypedHeader;
-                use headers::authorization::{Authorization, Bearer};
-
-                use crate::{
-                    precept,
-                    precept::{SignedMessage, Identity, ActixResult},
-                };
-
-                #(#handler_impls)*
-            }
-        }]
-    }
+    }.into()
 }

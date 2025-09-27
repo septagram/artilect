@@ -63,6 +63,10 @@ pub struct ChatMessage {
     pub updated_at: Option<OffsetDateTime>,
 }
 
+#[dto(chat, request)]
+#[message(FetchUserThreadsResponse, FetchUserThreadsMessage)]
+pub struct FetchUserThreadsRequest {}
+
 #[dto(chat, response)]
 pub struct FetchUserThreadsResponse {
     pub users: Vec<SyncUpdate<User>>,
@@ -70,11 +74,7 @@ pub struct FetchUserThreadsResponse {
 }
 
 #[dto(chat, request)]
-#[actix_message(FetchUserThreadsResponse, FetchUserThreadsMessage)]
-pub struct FetchUserThreadsRequest {}
-
-#[dto(chat, request)]
-#[actix_message(FetchThreadResponse, FetchThreadMessage)]
+#[message(FetchThreadResponse, FetchThreadMessage)]
 pub struct FetchThreadRequest {
     pub thread_id: Uuid,
 }
@@ -86,7 +86,7 @@ pub struct FetchThreadResponse {
 }
 
 #[dto(chat, request)]
-#[actix_message(SendMessageResponse, SendMessageMessage)]
+#[message(SendMessageResponse, SendMessageMessage)]
 pub struct SendMessageRequest {
     pub message: ChatMessage,
     pub is_new_thread: bool,

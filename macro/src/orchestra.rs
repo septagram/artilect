@@ -3,13 +3,7 @@ use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{parse_macro_input, punctuated::Punctuated, Token};
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
-}
+use crate::util::capitalize;
 
 pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
     let precepts = parse_macro_input!(input with Punctuated::<PreceptField, syn::Token![,]>::parse_terminated);
@@ -25,15 +19,13 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         let cfg_block = quote! {
             #[cfg(any(feature = #feature_in, feature = #feature_out))]
         };
-        let global_client_ident = format_ident!("Global{}Client", capitalize(precept.to_string().as_str()));
-        let client_ident = format_ident!("{}Client", capitalize(precept.to_string().as_str()));
         orchestra_fields.extend(cfg_block.clone());
         orchestra_fields.extend(quote! {
-            #precept: crate::precepts::#path::client::#global_client_ident,
+            pub #precept: crate::precepts::#path::Addr,
         });
         address_book_fields.extend(cfg_block.clone());
         address_book_fields.extend(quote! {
-            #precept: crate::precepts::#path::client::#client_ident,
+            pub #precept: crate::precepts::#path::Client,
         });
         address_book_converters.extend(cfg_block);
         address_book_converters.extend(quote! {
@@ -47,7 +39,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         }
 
         impl Orchestra {
-            pub fn to_address_book(&self, client_id: crate::precept::Identity, token: Option<std::sync::Arc<str>>) -> AddressBook {
+            pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>, token: Option<std::sync::Arc<str>>) -> AddressBook {
                 AddressBook {
                     #address_book_converters
                 }

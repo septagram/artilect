@@ -8,7 +8,7 @@ pub enum ChatProvider {
 }
 
 #[dto(auth, request)]
-#[actix_message(LoginResponse, LoginMessage)]
+#[message(LoginResponse, LoginMessage)]
 pub struct LoginRequest {
     pub user_id: Option<Uuid>,
 }
@@ -19,7 +19,7 @@ pub struct LoginResponse {
 }
 
 #[dto(auth, request)]
-#[actix_message(ConfirmLoginResponse, ConfirmLoginMessage)]
+#[message(ConfirmLoginResponse, ConfirmLoginMessage)]
 pub struct ConfirmLoginRequest {
     pub attempt_id: Uuid,
     pub provider: ChatProvider,
