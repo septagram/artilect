@@ -12,7 +12,7 @@ pub mod vector {
     pub mod chat {
         pub mod dto;
         mod local;
-        // mod remote;
+        mod remote;
         pub mod front;
 
         #[super::if_precept_in(chat)]

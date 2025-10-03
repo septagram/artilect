@@ -3,19 +3,22 @@ use dioxus::prelude::*;
 use futures_util::{Future, StreamExt};
 use time::OffsetDateTime;
 use uuid::Uuid;
-
+use crate::orchestra::AddressBook;
 use super::{consume_sync_update_batch, State, SyncState};
-use crate::precepts::vector::chat::front::api;
-use crate::precepts::vector::chat::dto::{ChatMessage, OneToManyChild, OneToManyUpdate, SyncUpdate, Thread};
+use crate::precepts::vector::chat::dto::{ChatMessage, FetchThreadRequest, FetchUserThreadsRequest, OneToManyChild, OneToManyUpdate, SendMessageRequest, SyncUpdate, Thread};
 
-fn use_action<T, F>(handler: &'static impl Fn(State, T) -> F) -> Coroutine<T>
+fn use_action<T, F>(handler: &'static impl Fn(State, Rc<AddressBook>, T) -> F) -> Coroutine<T>
 where
     F: Future<Output = ()> + 'static,
 {
     let state = use_context::<State>();
-    use_coroutine(move |mut rx: UnboundedReceiver<T>| async move {
-        while let Some(arg) = rx.next().await {
-            handler(state, arg).await;
+    let api = use_context::<Signal<Rc<AddressBook>>>();
+    use_coroutine(move |mut rx: UnboundedReceiver<T>| {
+        let api = api.read().clone();
+        async move {
+            while let Some(arg) = rx.next().await {
+                handler(state, api.clone(), arg).await;
+            }
         }
     })
 }
@@ -27,8 +30,8 @@ pub fn use_app_actions() {
 }
 
 pub type FetchUserThreadsAction = ();
-async fn handle_fetch_user_threads(mut state: State, _: FetchUserThreadsAction) {
-    match api::fetch_user_threads().await {
+async fn handle_fetch_user_threads(mut state: State, api: Rc<AddressBook>,  _: FetchUserThreadsAction) {
+    match api.chat.send(FetchUserThreadsRequest {}).await {
         Ok(response) => {
             let mut thread_updates = Vec::new();
             state.thread_list.with_mut(|thread_list| {
@@ -56,8 +59,8 @@ async fn handle_fetch_user_threads(mut state: State, _: FetchUserThreadsAction) 
 }
 
 pub type FetchThreadAction = Uuid;
-async fn handle_fetch_thread(mut state: State, thread_id: FetchThreadAction) {
-    match api::fetch_thread(thread_id).await {
+async fn handle_fetch_thread(mut state: State, api: Rc<AddressBook>, thread_id: FetchThreadAction) {
+    match api.chat.send(FetchThreadRequest { thread_id }).await {
         Ok(response) => {
             state.threads.with_mut(|t| {
                 consume_sync_update_batch(t, Some(response.threads));
@@ -94,7 +97,7 @@ pub struct SendMessageAction {
     pub is_new_thread: bool,
     pub content: String,
 }
-async fn handle_send_message(mut state: State, action: SendMessageAction) {
+async fn handle_send_message(mut state: State, api: Rc<AddressBook>, action: SendMessageAction) {
     let SendMessageAction { thread_id, is_new_thread, content } = action;
     if is_new_thread {
         let now = OffsetDateTime::now_utc();
@@ -132,7 +135,7 @@ async fn handle_send_message(mut state: State, action: SendMessageAction) {
     state
         .thread_message_ids
         .with_mut(|ids| ids.entry(thread_id).or_insert(vec![]).push(message.id));
-    match api::send_message(&message, is_new_thread).await {
+    match api.chat.send(SendMessageRequest { message: message.clone(), is_new_thread }).await {
         Ok(response) => {
             state.threads.with_mut(|t| {
                 consume_sync_update_batch(t, Some(response.threads));

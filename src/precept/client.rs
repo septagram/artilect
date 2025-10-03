@@ -105,7 +105,7 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                let mut request = msg.into_request();
+                let mut request = msg.into_request(self.base_url.as_ref());
                 if let Some(token) = &self.token {
                     request = request.header("Authorization", format!("Bearer {}", token));
                 }

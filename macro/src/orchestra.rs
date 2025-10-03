@@ -29,7 +29,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         });
         address_book_converters.extend(cfg_block);
         address_book_converters.extend(quote! {
-            #precept: self.#precept.to_client(client_id, token),
+            #precept: self.#precept.to_client(client_id.clone(), token.clone()),
         });
     }
 
@@ -42,11 +42,17 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
             pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>, token: Option<std::sync::Arc<str>>) -> AddressBook {
                 AddressBook {
                     #address_book_converters
+
+                    client_id,
+                    token,
                 }
             }
         }
 
         pub struct AddressBook {
+            client_id: Option<crate::precept::Identity>,
+            token: Option<std::sync::Arc<str>>,
+
             #address_book_fields
         }
     };

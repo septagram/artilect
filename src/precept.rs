@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 #[cfg(feature = "backend")]
 pub use local::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreceptID {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]
     Auth,
@@ -45,10 +45,16 @@ pub struct SignedMessage<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Identity {
     pub user_id: Uuid,
     pub precept_id: Option<PreceptID>,
+}
+
+impl PartialEq for Identity {
+    fn eq(&self, other: &Self) -> bool {
+        self.user_id == other.user_id && self.precept_id == other.precept_id
+    }
 }
 
 pub trait Message: Send + Sync + 'static {
@@ -64,7 +70,7 @@ pub trait MessageLocalStrategy<P: Precept>: Message {
 
 #[cfg(feature = "client-http2")]
 pub trait MessageRemoteStrategy: Message {
-    fn into_request(self) -> reqwest::RequestBuilder;
+    fn into_request(self, base_url: &str) -> reqwest::RequestBuilder;
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
