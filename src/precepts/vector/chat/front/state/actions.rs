@@ -1,18 +1,26 @@
-use dioxus::logger::tracing::error;
-use dioxus::prelude::*;
+use dioxus::{logger::tracing::error, prelude::*};
 use futures_util::{Future, StreamExt};
 use time::OffsetDateTime;
 use uuid::Uuid;
-use crate::orchestra::AddressBook;
-use super::{consume_sync_update_batch, State, SyncState};
-use crate::precepts::vector::chat::dto::{ChatMessage, FetchThreadRequest, FetchUserThreadsRequest, OneToManyChild, OneToManyUpdate, SendMessageRequest, SyncUpdate, Thread};
 
-fn use_action<T, F>(handler: &'static impl Fn(State, Rc<AddressBook>, T) -> F) -> Coroutine<T>
+use super::{State, SyncState, consume_sync_update_batch};
+use crate::{
+    orchestra::AddressBook,
+    precepts::vector::chat::{
+        Client,
+        dto::{
+            ChatMessage, FetchThreadRequest, FetchUserThreadsRequest, OneToManyChild,
+            OneToManyUpdate, SendMessageRequest, SyncUpdate, Thread,
+        },
+    },
+};
+
+fn use_action<T, R, A>(api: Memo<A>, handler: &'static impl Fn(State, A, T) -> R) -> Coroutine<T>
 where
-    F: Future<Output = ()> + 'static,
+    R: Future<Output = ()> + 'static,
+    A: Clone + PartialEq,
 {
     let state = use_context::<State>();
-    let api = use_context::<Signal<Rc<AddressBook>>>();
     use_coroutine(move |mut rx: UnboundedReceiver<T>| {
         let api = api.read().clone();
         async move {
@@ -24,14 +32,16 @@ where
 }
 
 pub fn use_app_actions() {
-    use_action::<FetchUserThreadsAction, _>(&handle_fetch_user_threads);
-    use_action::<FetchThreadAction, _>(&handle_fetch_thread);
-    use_action::<SendMessageAction, _>(&handle_send_message);
+    let api = use_context::<Signal<AddressBook>>();
+    let chat_api = use_memo(move || api.read().chat.clone());
+    use_action(chat_api, &handle_fetch_user_threads);
+    use_action(chat_api, &handle_fetch_thread);
+    use_action(chat_api, &handle_send_message);
 }
 
 pub type FetchUserThreadsAction = ();
-async fn handle_fetch_user_threads(mut state: State, api: Rc<AddressBook>,  _: FetchUserThreadsAction) {
-    match api.chat.send(FetchUserThreadsRequest {}).await {
+async fn handle_fetch_user_threads(mut state: State, api: Client, _: FetchUserThreadsAction) {
+    match api.send(FetchUserThreadsRequest {}).await {
         Ok(response) => {
             let mut thread_updates = Vec::new();
             state.thread_list.with_mut(|thread_list| {
@@ -59,8 +69,8 @@ async fn handle_fetch_user_threads(mut state: State, api: Rc<AddressBook>,  _: F
 }
 
 pub type FetchThreadAction = Uuid;
-async fn handle_fetch_thread(mut state: State, api: Rc<AddressBook>, thread_id: FetchThreadAction) {
-    match api.chat.send(FetchThreadRequest { thread_id }).await {
+async fn handle_fetch_thread(mut state: State, api: Client, thread_id: FetchThreadAction) {
+    match api.send(FetchThreadRequest { thread_id }).await {
         Ok(response) => {
             state.threads.with_mut(|t| {
                 consume_sync_update_batch(t, Some(response.threads));
@@ -97,8 +107,12 @@ pub struct SendMessageAction {
     pub is_new_thread: bool,
     pub content: String,
 }
-async fn handle_send_message(mut state: State, api: Rc<AddressBook>, action: SendMessageAction) {
-    let SendMessageAction { thread_id, is_new_thread, content } = action;
+async fn handle_send_message(mut state: State, api: Client, action: SendMessageAction) {
+    let SendMessageAction {
+        thread_id,
+        is_new_thread,
+        content,
+    } = action;
     if is_new_thread {
         let now = OffsetDateTime::now_utc();
         state.threads.with_mut(|t| {
@@ -135,7 +149,13 @@ async fn handle_send_message(mut state: State, api: Rc<AddressBook>, action: Sen
     state
         .thread_message_ids
         .with_mut(|ids| ids.entry(thread_id).or_insert(vec![]).push(message.id));
-    match api.chat.send(SendMessageRequest { message: message.clone(), is_new_thread }).await {
+    match api
+        .send(SendMessageRequest {
+            message: message.clone(),
+            is_new_thread,
+        })
+        .await
+    {
         Ok(response) => {
             state.threads.with_mut(|t| {
                 consume_sync_update_batch(t, Some(response.threads));

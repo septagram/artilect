@@ -2,7 +2,6 @@ use dioxus::logger::tracing::info;
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-mod api;
 mod components;
 mod state;
 use components::{Chat, Layout, NewChat, Style};

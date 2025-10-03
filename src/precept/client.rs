@@ -7,7 +7,7 @@ cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;
 
-        #[derive(Clone)]
+        #[derive(Clone, PartialEq)]
         pub struct AddrLocal<T: actix::Actor> {
             pub addr: Arc<SetOnce<actix::Addr<T>>>,
         }
@@ -26,7 +26,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone)]
+        #[derive(Clone, PartialEq)]
         pub struct ClientLocal<T: actix::Actor> {
             addr: Arc<SetOnce<actix::Addr<T>>>,
             client_id: Identity,
@@ -79,6 +79,7 @@ cfg_block! {
     }
 
     #[cfg(feature = "client-http2")] {
+        #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
             base_url: Arc<str>,
         }
@@ -93,7 +94,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone)]
+        #[derive(Clone, PartialEq)]
         pub struct ClientRemote {
             token: Option<Arc<str>>,
             base_url: Arc<str>,
@@ -145,6 +146,7 @@ cfg_block! {
     }
 
     #[cfg(all(feature = "backend", feature = "client-http2"))] {
+        #[derive(Clone, PartialEq)]
         pub enum Addr<P: actix::Actor> {
             Local(AddrLocal<P>),
             Remote(AddrRemote),
@@ -167,6 +169,7 @@ cfg_block! {
             }
         }
 
+        #[derive(Clone, PartialEq)]
         pub enum Client<P: actix::Actor> {
             Local(ClientLocal<P>),
             Remote(ClientRemote),

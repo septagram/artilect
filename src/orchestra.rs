@@ -22,10 +22,10 @@ cfg_block! {
         use dioxus::prelude::*;
 
         pub fn use_address_book(orchestra: Arc<Orchestra>, identity: Option<Identity>, token: Option<Arc<str>>) {
-            let mut address_book = use_context_provider(|| Signal::new(Rc::new(orchestra.to_address_book(identity.clone(), token.clone()))));
+            let mut address_book = use_context_provider(|| Signal::new(orchestra.to_address_book(identity.clone(), token.clone())));
             use_effect(use_reactive!(|orchestra, token| {
                 let mut write = address_book.write();
-                *write = Rc::new(orchestra.to_address_book(identity, token));
+                *write = orchestra.to_address_book(identity, token);
             }));
         }
     }
