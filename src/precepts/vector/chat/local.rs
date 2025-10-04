@@ -70,6 +70,10 @@ pub struct Precept {
     resources: Arc<Resources>,
 }
 
+impl actix::Actor for Precept {
+    type Context = actix::Context<Self>;
+}
+
 impl Precept {
     pub fn new(address_book: AddressBook, pool: PgPool, self_user: User, system_prompt: RootChain) -> Self {
         Self {

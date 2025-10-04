@@ -19,6 +19,12 @@ pub mod vector {
         pub use local::{Precept, ensure_artilect_user, AGENT_PROMPT_TEXT};
     }
 
-    #[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
-    mod telegram;
+    #[precept]
+    pub mod telegram {
+        pub mod dto;
+        mod local;
+
+        #[super::if_precept_in(telegram)]
+        pub use local::{Precept, Resources};
+    }
 }

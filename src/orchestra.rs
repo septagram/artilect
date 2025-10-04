@@ -7,7 +7,7 @@ use crate::precept::Identity;
 orchestra_from_precepts!{
     // auth: cortex::auth,
     chat: vector::chat,
-    // telegram: vector::telegram,
+    telegram: vector::telegram,
     // valid ignored comment
 }
 

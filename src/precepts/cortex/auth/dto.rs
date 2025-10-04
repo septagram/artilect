@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 #[dto(auth, request)]
-pub enum ChatProvider {
+pub enum AuthProvider {
     Telegram,
 }
 
@@ -22,7 +22,7 @@ pub struct LoginResponse {
 #[message(ConfirmLoginResponse, ConfirmLoginMessage)]
 pub struct ConfirmLoginRequest {
     pub attempt_id: Uuid,
-    pub provider: ChatProvider,
+    pub provider: AuthProvider,
     pub external_user_id: Box<str>,
 }
 

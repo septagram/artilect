@@ -130,7 +130,7 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
 // - Implement Precept trait
 pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenStream {
     let struct_name = struct_def.ident.clone();
-    let message_types = parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_separated_nonempty);
+    let message_types = parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_terminated);
     println!("ok");
     let message_type_iter = message_types.iter();
     let mut resources_type = None;
@@ -150,12 +150,9 @@ pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenSt
             type Resources = #resources_type;
         }
 
-        impl actix::Actor for #struct_name {
-            type Context = actix::Context<Self>;
-        }
-
         impl actix::Supervised for #struct_name {}
 
+        #[cfg(feature = "server-http2")]
         impl crate::precept::Routable for actix::Addr<#struct_name> {
             fn build_router(self) -> axum::Router {
                 let mut router = axum::Router::new();

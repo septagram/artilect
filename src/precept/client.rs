@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use cfg_block::cfg_block;
 use serde::de::DeserializeOwned;
-use super::{Identity, SignedMessage, Error, HttpErrorBody};
+use super::{Identity, SignedMessage, Error};
 
 cfg_block! {
     #[cfg(feature = "backend")] {
@@ -79,6 +79,8 @@ cfg_block! {
     }
 
     #[cfg(feature = "client-http2")] {
+        use super::HttpErrorBody;
+
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
             base_url: Arc<str>,
