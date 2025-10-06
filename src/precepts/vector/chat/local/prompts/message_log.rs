@@ -2,8 +2,8 @@ use once_cell::sync::Lazy;
 use time::format_description::{self, FormatItem};
 use uuid::Uuid;
 
-use crate::infer;
 use super::super::super::dto::User;
+use crate::infer;
 
 static DATE_FORMAT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
     format_description::parse("[weekday] [year]-[month]-[day]")
@@ -11,13 +11,11 @@ static DATE_FORMAT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
 });
 
 static TIME_FORMAT_LONG: Lazy<Vec<FormatItem>> = Lazy::new(|| {
-    format_description::parse("[hour]:[minute]:[second]")
-        .expect("Failed to parse long time format")
+    format_description::parse("[hour]:[minute]:[second]").expect("Failed to parse long time format")
 });
 
 static TIME_FORMAT_SHORT: Lazy<Vec<FormatItem>> = Lazy::new(|| {
-    format_description::parse("[hour]:[minute]")
-        .expect("Failed to parse short time format")
+    format_description::parse("[hour]:[minute]").expect("Failed to parse short time format")
 });
 
 #[derive(sqlx::FromRow)]
@@ -39,7 +37,7 @@ impl From<MessageLogItemRow> for MessageLogItem {
         Self {
             user: match (row.user_id, row.user_name) {
                 (Some(id), Some(name)) => Some(User { id, name }),
-                _ => None
+                _ => None,
             },
             content: row.content,
             created_at: row.created_at,
@@ -53,11 +51,16 @@ impl MessageLogItem {
     }
 
     pub fn is_own_message(&self) -> bool {
-        self.user.as_ref().map(|u| u.id == Uuid::nil()).unwrap_or(false)
+        self.user
+            .as_ref()
+            .map(|u| u.id == Uuid::nil())
+            .unwrap_or(false)
     }
 }
 
-pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item = infer::Message>, time::error::Format> {
+pub fn message_log(
+    messages: Vec<MessageLogItem>,
+) -> Result<impl Iterator<Item = infer::Message>, time::error::Format> {
     let now = time::OffsetDateTime::now_utc();
     let mut last_date = None;
     let mut output_messages = Vec::new();
@@ -92,11 +95,14 @@ pub fn message_log(messages: Vec<MessageLogItem>) -> Result<impl Iterator<Item =
         };
 
         match message.user {
-            None => output_messages.push(infer::Message::new_text_system(markup::new! {
-                event [date = &date_attr, time = &time_attr] {
-                    @message.content
+            None => output_messages.push(infer::Message::new_text_system(
+                markup::new! {
+                    event [date = &date_attr, time = &time_attr] {
+                        @message.content
+                    }
                 }
-            }.to_string())),
+                .to_string(),
+            )),
             Some(user) => {
                 let context = markup::new! {
                     nextMessageInfo [date = &date_attr, time = &time_attr, from = &user.name];

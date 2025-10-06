@@ -1,7 +1,11 @@
-use super::openai::{ApiError, OpenAIError};
-use super::parsing::ParseError;
 use std::sync::Arc;
+
 use thiserror::Error;
+
+use super::{
+    openai::{ApiError, OpenAIError},
+    parsing::ParseError,
+};
 
 #[derive(Error, Debug)]
 pub enum InferError {

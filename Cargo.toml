@@ -13,6 +13,40 @@ edition = "2024"
 license = "Apache-2.0"
 keywords = ["ai", "agents", "llm", "chat"]
 
+[[bin]]
+name = "artilect"
+required-features = ["auth-front", "auth-out", "chat-front", "chat-out"]
+
+[[bin]]
+name = "artilect-cortex"
+path = "src/bin/artilect_cortex.rs"
+required-features = ["auth-in", "chat-in", "telegram-in"]
+
+[[bin]]
+name = "artilect-minicortex"
+path = "src/bin/artilect_minicortex.rs"
+required-features = ["auth-in", "auth-front", "chat-in", "chat-front", "telegram-in"]
+
+[[bin]]
+name = "auth"
+required-features = ["auth-in"]
+
+[[bin]]
+name = "auth-front"
+required-features = ["auth-front", "auth-out"]
+
+[[bin]]
+name = "chat"
+required-features = ["chat-in", "server-http2"]
+
+[[bin]]
+name = "chat-front"
+required-features = ["chat-front", "chat-out"]
+
+[[bin]]
+name = "telegram"
+required-features = ["telegram-in"]
+
 [package]
 name = "artilect"
 version = "0.1.0"

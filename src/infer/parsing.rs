@@ -1,7 +1,6 @@
+pub use artilect_macro::FromLlmReply;
 use serde::Deserialize;
 use thiserror::Error;
-
-pub use artilect_macro::FromLlmReply;
 
 #[derive(Error, Debug)]
 pub enum ParseError {
@@ -92,7 +91,7 @@ impl<T: FromLlmReply> WithReasoning<T> {
                     reasoning,
                     reply,
                 ))
-            },
+            }
             None => Err(ParseError::BrokenReasoningSequence),
         }
     }
@@ -120,7 +119,7 @@ where
     }
 }
 
-pub fn find_and_parse_json<T>(expected_type: JsonType, text: &str) -> Result<T, ParseError> 
+pub fn find_and_parse_json<T>(expected_type: JsonType, text: &str) -> Result<T, ParseError>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -128,7 +127,7 @@ where
         JsonType::Object => ('{', '}'),
         JsonType::Array => ('[', ']'),
     };
-    
+
     let start_index = text.find(opening_brace).ok_or(ParseError::MissingJson)?;
     let end_index = text.rfind(closing_brace).ok_or(ParseError::MissingJson)?;
 

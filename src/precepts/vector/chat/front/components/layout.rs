@@ -1,9 +1,9 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
-// use tokio::time::{sleep, Duration};
 
+// use tokio::time::{sleep, Duration};
 use super::SidebarThreadLink;
-use crate::precepts::vector::chat::front::{state::State, Route};
+use crate::precepts::vector::chat::front::{Route, state::State};
 
 pub static CSS: Asset = asset!("/src/precepts/vector/chat/front/components/layout.css");
 

@@ -1,14 +1,15 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-use crate::precepts::vector::chat::front::{state::State, Route};
+use crate::precepts::vector::chat::front::{Route, state::State};
 
 #[component]
 pub fn SidebarThreadLink(thread_id: Uuid) -> Element {
     let state = use_context::<State>();
     let route = use_route::<Route>();
-    let is_active = matches!(route, Route::Chat { thread_id: current_id } if current_id == thread_id);
-    
+    let is_active =
+        matches!(route, Route::Chat { thread_id: current_id } if current_id == thread_id);
+
     let threads = state.threads.read();
     let thread_state = threads
         .get(&thread_id)

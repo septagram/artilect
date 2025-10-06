@@ -9,7 +9,7 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // fn new(resources: Self::Resources) -> Self;
 }
 
-impl <M> actix::Message for SignedMessage<M>
+impl<M> actix::Message for SignedMessage<M>
 where
     M: Message,
 {
@@ -28,12 +28,12 @@ impl<T> ActixResult<T> for Result<super::Result<T>, actix::MailboxError> {
                 Err(error) => {
                     tracing::error!("Precept error: {:?}", error);
                     Err(error)
-                },
+                }
             },
             Err(error) => {
                 tracing::error!("Mailbox error: {:?}", error);
                 Err(Error::ServiceUnavailable)
-            },
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
-use once_cell::sync::Lazy;
 use std::env;
+
+use once_cell::sync::Lazy;
 
 pub static NAME: Lazy<Box<str>> = Lazy::new(|| {
     env::var("NAME")
@@ -25,4 +26,3 @@ pub fn validate() {
     let _ = &*ROLE_SHORT_DESCRIPTION;
     let _ = &*PERSONALITY_DESCRIPTION;
 }
-

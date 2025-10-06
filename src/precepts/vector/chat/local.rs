@@ -1,25 +1,27 @@
 mod prompts;
-use actix::Addr;
-use sqlx::PgPool;
 use std::{ops::Deref, sync::Arc};
-use axum::extract::Path;
-use axum::Router;
-use axum::routing::{get, post};
+
+use actix::Addr;
+use artilect_macro::{precept, precept_message, route_callback};
+#[cfg(feature = "server-http2")]
+use axum::{
+    Router,
+    extract::Path,
+    routing::{get, post},
+};
+use sqlx::PgPool;
 use uuid::Uuid;
 
-use artilect_macro::{precept, precept_message, route_callback};
-use crate::{
-    infer::{self, PlainText, RootChain},
-    precept::{self, CoercibleResult, SignedMessage, Identity},
-};
-use crate::orchestra::AddressBook;
-use crate::precept::MessageLocalStrategy;
 use super::dto::{
     ChatMessage, FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
     FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
     SendMessageResponse, SyncUpdate, Thread, User,
 };
-
+use crate::{
+    infer::{self, PlainText, RootChain},
+    orchestra::AddressBook,
+    precept::{self, CoercibleResult, Identity, MessageLocalStrategy, SignedMessage},
+};
 
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
 // You actively watch for incoming messages \
@@ -51,8 +53,8 @@ pub async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User,
         artilect_id,
         name.as_str(),
     )
-        .fetch_one(pool)
-        .await?;
+    .fetch_one(pool)
+    .await?;
 
     tracing::info!("Artilect user ensured: {:?}", user);
     Ok(user)
@@ -75,7 +77,12 @@ impl actix::Actor for Precept {
 }
 
 impl Precept {
-    pub fn new(address_book: AddressBook, pool: PgPool, self_user: User, system_prompt: RootChain) -> Self {
+    pub fn new(
+        address_book: AddressBook,
+        pool: PgPool,
+        self_user: User,
+        system_prompt: RootChain,
+    ) -> Self {
         Self {
             resources: Arc::new(Resources {
                 address_book,
@@ -87,10 +94,7 @@ impl Precept {
     }
 }
 
-async fn fetch_thread(
-    res: &Resources,
-    thread_id: Uuid,
-) -> precept::Result<Thread> {
+async fn fetch_thread(res: &Resources, thread_id: Uuid) -> precept::Result<Thread> {
     let thread = sqlx::query_as!(
         Thread,
         r#"--sql
@@ -100,9 +104,9 @@ async fn fetch_thread(
         "#,
         thread_id,
     )
-        .fetch_one(&res.pool)
-        .await
-        .map_err(|_| precept::Error::NotFound)?;
+    .fetch_one(&res.pool)
+    .await
+    .map_err(|_| precept::Error::NotFound)?;
     Ok(thread)
 }
 
@@ -122,17 +126,13 @@ pub async fn fetch_thread_for_user(
         thread_id,
         from_user_id,
     )
-        .fetch_one(&res.pool)
-        .await
-        .map_err(|_| precept::Error::NotFound)?;
+    .fetch_one(&res.pool)
+    .await
+    .map_err(|_| precept::Error::NotFound)?;
     Ok(thread)
 }
 
-async fn create_thread(
-    pool: &PgPool,
-    user_id: Uuid,
-    thread_id: Uuid,
-) -> anyhow::Result<Thread> {
+async fn create_thread(pool: &PgPool, user_id: Uuid, thread_id: Uuid) -> anyhow::Result<Thread> {
     let mut tx = pool.begin().await?;
 
     // Create the thread
@@ -146,8 +146,8 @@ async fn create_thread(
         thread_id,
         user_id,
     )
-        .fetch_one(&mut *tx)
-        .await?;
+    .fetch_one(&mut *tx)
+    .await?;
 
     // Add both users as participants
     sqlx::query!(
@@ -159,8 +159,8 @@ async fn create_thread(
         user_id,
         Uuid::nil(),
     )
-        .execute(&mut *tx)
-        .await?;
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     Ok(thread)
@@ -185,10 +185,11 @@ async fn create_message(
             thread_id,
             user_id,
         )
-            .fetch_one(&mut *tx)
-            .await.into_precept_result()?
-            .exists
-            .unwrap_or(false),
+        .fetch_one(&mut *tx)
+        .await
+        .into_precept_result()?
+        .exists
+        .unwrap_or(false),
         None => true,
     };
 
@@ -209,9 +210,9 @@ async fn create_message(
         thread_id,
         message,
     )
-        .fetch_one(&mut *tx)
-        .await
-        .into_precept_result()?;
+    .fetch_one(&mut *tx)
+    .await
+    .into_precept_result()?;
 
     let thread = sqlx::query_as!(
         Thread,
@@ -222,18 +223,15 @@ async fn create_message(
         message.created_at,
         thread_id,
     )
-        .fetch_one(&mut *tx)
-        .await
-        .into_precept_result()?;
+    .fetch_one(&mut *tx)
+    .await
+    .into_precept_result()?;
 
     tx.commit().await.into_precept_result()?;
     Ok((message, thread))
 }
 
-async fn generate_thread_name(
-    res: &Resources,
-    thread_id: Uuid,
-) -> anyhow::Result<Thread> {
+async fn generate_thread_name(res: &Resources, thread_id: Uuid) -> anyhow::Result<Thread> {
     let messages = sqlx::query_as!(
         prompts::MessageLogItemRow,
         r#"--sql
@@ -250,25 +248,29 @@ async fn generate_thread_name(
         // @note: DESC sorting b/c we will have to eventually introduce LIMIT
         thread_id,
     )
-        .fetch_all(&res.pool)
-        .await
-        .map_err(|_| precept::Error::NotFound)?
-        .into_iter()
-        .map(prompts::MessageLogItem::from)
-        .collect::<Vec<_>>();
+    .fetch_all(&res.pool)
+    .await
+    .map_err(|_| precept::Error::NotFound)?
+    .into_iter()
+    .map(prompts::MessageLogItem::from)
+    .collect::<Vec<_>>();
     // @todo Make it less ugly by using .fetch instead of .fetch_all
 
-    let inference = res.system_prompt
+    let inference = res
+        .system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
         // @todo: make the next message system message when the model no longer has problems with it.
-        .with_message(infer::Message::new_text_user(markup::new! {
-            systemInstructions {
-                "Write a title for the thread that best summarizes the conversation. "
-                "Respond with just the thread title, no preamble or quotes or extra text. "
-                "The title should be in the same language as the most messages are."
+        .with_message(infer::Message::new_text_user(
+            markup::new! {
+                systemInstructions {
+                    "Write a title for the thread that best summarizes the conversation. "
+                    "Respond with just the thread title, no preamble or quotes or extra text. "
+                    "The title should be in the same language as the most messages are."
+                }
             }
-        }.to_string()))
+            .to_string(),
+        ))
         .infer_drop::<PlainText>(true)
         .await;
 
@@ -290,8 +292,8 @@ async fn generate_thread_name(
                 content.deref(),
                 thread_id,
             )
-                .fetch_one(&res.pool)
-                .await?
+            .fetch_one(&res.pool)
+            .await?
         }
         Err(e) => {
             create_message(&res.pool, None, thread_id, None, &e.to_string()).await?;
@@ -301,10 +303,7 @@ async fn generate_thread_name(
     Ok(thread)
 }
 
-async fn get_thread_message_ids(
-    pool: &PgPool,
-    thread_id: Uuid,
-) -> precept::Result<Vec<Uuid>> {
+async fn get_thread_message_ids(pool: &PgPool, thread_id: Uuid) -> precept::Result<Vec<Uuid>> {
     let messages = sqlx::query!(
         r#"--sql
             SELECT id
@@ -314,9 +313,9 @@ async fn get_thread_message_ids(
         "#,
         thread_id,
     )
-        .fetch_all(pool)
-        .await
-        .map_err(|_| precept::Error::NotFound)?;
+    .fetch_all(pool)
+    .await
+    .map_err(|_| precept::Error::NotFound)?;
     Ok(messages.into_iter().map(|m| m.id).collect())
 }
 
@@ -344,65 +343,71 @@ async fn respond_to_thread(
         "#,
         thread_id,
     )
-        .fetch_all(&res.pool)
-        .await?
-        .into_iter()
-        .map(prompts::MessageLogItem::from)
-        .collect::<Vec<_>>();
+    .fetch_all(&res.pool)
+    .await?
+    .into_iter()
+    .map(prompts::MessageLogItem::from)
+    .collect::<Vec<_>>();
     // @todo Make it less ugly by using .fetch instead of .fetch_all
 
     for msg in &mut messages {
         msg.created_at = msg.created_at.to_offset(timezone);
     }
 
-    let inference = res.system_prompt
+    let inference = res
+        .system_prompt
         .fork()
         .with_messages(prompts::message_log(messages)?)
-        .with_message(infer::Message::new_text_system(markup::new! {
-            systemInstructions {
-                "Do not just repeat back the question. "
-                "Note to respond in the language the message above."
+        .with_message(infer::Message::new_text_system(
+            markup::new! {
+                systemInstructions {
+                    "Do not just repeat back the question. "
+                    "Note to respond in the language the message above."
+                }
             }
-        }.to_string()))
+            .to_string(),
+        ))
         .infer_drop::<PlainText>(false)
         .await;
 
     match inference {
         Ok(response) => {
             let PlainText(content) = response.value;
-            Ok(
-                create_message(
-                    &res.pool,
-                    Some(res.self_user.id),
-                    thread_id,
-                    None,
-                    content.deref(),
-                )
-                    .await?
-            )
-        },
-        Err(e) => Ok(
-            create_message(
+            Ok(create_message(
                 &res.pool,
-                None,
+                Some(res.self_user.id),
                 thread_id,
                 None,
-                &e.to_string(), //
+                content.deref(),
             )
-                .await?
-        ),
+            .await?)
+        }
+        Err(e) => Ok(create_message(
+            &res.pool,
+            None,
+            thread_id,
+            None,
+            &e.to_string(), //
+        )
+        .await?),
     }
 }
 
 #[precept_message]
 impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
     fn route(router: Router<Addr<Precept>>) -> Router<Addr<Precept>> {
-        router.route("/chats", get(route_callback!(|| FetchUserThreadsRequest {})))
+        router.route(
+            "/chats",
+            get(route_callback!(|| FetchUserThreadsRequest {})),
+        )
     }
 
     async fn handle(
         res: &Resources,
-        Identity { user_id, precept_id: _ } : Identity,
+        Identity {
+            user_id,
+            precept_id: _,
+        }: Identity,
         _: FetchUserThreadsRequest,
     ) -> precept::Result<FetchUserThreadsResponse> {
         let user = sqlx::query_as!(
@@ -414,9 +419,9 @@ impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
             "#,
             user_id,
         )
-            .fetch_one(&res.pool)
-            .await
-            .map_err(|_| precept::Error::NotFound)?;
+        .fetch_one(&res.pool)
+        .await
+        .map_err(|_| precept::Error::NotFound)?;
 
         let threads = sqlx::query_as!(
             Thread,
@@ -429,9 +434,9 @@ impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
             "#,
             user_id,
         )
-            .fetch_all(&res.pool)
-            .await
-            .map_err(|_| precept::Error::NotFound)?;
+        .fetch_all(&res.pool)
+        .await
+        .map_err(|_| precept::Error::NotFound)?;
 
         Ok(FetchUserThreadsResponse {
             users: vec![SyncUpdate::Updated(user)],
@@ -449,14 +454,20 @@ impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
 #[precept_message]
 impl MessageLocalStrategy<Precept> for FetchThreadRequest {
     fn route(router: Router<Addr<Precept>>) -> Router<Addr<Precept>> {
-        router.route("/chat/{thread_id}", get(route_callback!(
-            |Path(thread_id): Path<Uuid>| FetchThreadRequest { thread_id }
-        )))
+        router.route(
+            "/chat/{thread_id}",
+            get(route_callback!(|Path(thread_id): Path<Uuid>| {
+                FetchThreadRequest { thread_id }
+            })),
+        )
     }
 
     async fn handle(
         res: &Resources,
-        Identity { user_id, precept_id: _ }: Identity,
+        Identity {
+            user_id,
+            precept_id: _,
+        }: Identity,
         FetchThreadRequest { thread_id }: FetchThreadRequest,
     ) -> precept::Result<FetchThreadResponse> {
         let thread = fetch_thread_for_user(res, user_id, thread_id).await?;
@@ -470,9 +481,9 @@ impl MessageLocalStrategy<Precept> for FetchThreadRequest {
             "#,
             thread_id,
         )
-            .fetch_all(&res.pool)
-            .await
-            .into_precept_result()?;
+        .fetch_all(&res.pool)
+        .await
+        .into_precept_result()?;
 
         Ok(FetchThreadResponse {
             threads: vec![SyncUpdate::Updated(thread)],
@@ -495,7 +506,10 @@ impl MessageLocalStrategy<Precept> for SendMessageRequest {
 
     async fn handle(
         res: &Resources,
-        Identity { user_id, precept_id: _ }: Identity,
+        Identity {
+            user_id,
+            precept_id: _,
+        }: Identity,
         request: SendMessageRequest,
     ) -> precept::Result<SendMessageResponse> {
         let thread_id = request.message.thread_id;
@@ -509,7 +523,7 @@ impl MessageLocalStrategy<Precept> for SendMessageRequest {
             Some(request.message.id),
             &request.message.content,
         )
-            .await?;
+        .await?;
         let (ai_message, thread) = respond_to_thread(&res, thread_id).await?;
         let thread = if request.is_new_thread {
             generate_thread_name(&res, thread_id).await?

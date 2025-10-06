@@ -1,8 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Meta};
-use syn::punctuated::Punctuated;
-use syn::parse::Parser;
+use syn::{Meta, parse::Parser, parse_macro_input, punctuated::Punctuated};
 
 use crate::util::take_attribute;
 
@@ -49,7 +47,9 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut args = args.into_iter();
 
     // The first argument is the precept name (must be a single identifier)
-    let precept_name = args.next().expect("Expected precept name as first argument");
+    let precept_name = args
+        .next()
+        .expect("Expected precept name as first argument");
 
     // The rest are flags
     let mut flags = DtoFlags::default();
@@ -123,20 +123,25 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     const BASIC_SYNTAX_ERROR: &str = "The actix_message attribute must have the following syntax: #[actix_message(ResponseType[, MessageType])].";
     let actix_message_output = if let Some(attr) = actix_message_attr {
         let mut actix_args = match attr.meta {
-            Meta::List(list) => Punctuated
-                ::<syn::Ident, syn::Token![,]>
-            ::parse_separated_nonempty
+            Meta::List(list) => Punctuated::<syn::Ident, syn::Token![,]>::parse_separated_nonempty
                 .parse2(list.tokens)
                 .expect(BASIC_SYNTAX_ERROR)
                 .into_iter(),
             _ => panic!("{}", BASIC_SYNTAX_ERROR),
         };
-        let response_type = actix_args
-            .next()
-            .expect(format!("Expected response_type as first argument. {}", BASIC_SYNTAX_ERROR).as_str());
+        let response_type = actix_args.next().expect(
+            format!(
+                "Expected response_type as first argument. {}",
+                BASIC_SYNTAX_ERROR
+            )
+            .as_str(),
+        );
         let message_type = actix_args.next();
         if actix_args.next().is_some() {
-            panic!("Too many arguments - only response_type and optional message_type allowed. {}", BASIC_SYNTAX_ERROR);
+            panic!(
+                "Too many arguments - only response_type and optional message_type allowed. {}",
+                BASIC_SYNTAX_ERROR
+            );
         }
 
         let message_impl = quote! {
@@ -150,7 +155,7 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #[cfg(feature = #feature_in)]
                 pub type #message_type = crate::precept::SignedMessage<#item_ident>;
             },
-            None => quote! {}
+            None => quote! {},
         };
 
         quote! {

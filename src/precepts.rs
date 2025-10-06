@@ -1,4 +1,4 @@
-use artilect_macro::{precept, if_precept_in};
+use artilect_macro::{if_precept_in, precept};
 
 pub mod cortex {
     use super::*;
@@ -11,12 +11,12 @@ pub mod vector {
     #[precept]
     pub mod chat {
         pub mod dto;
+        pub mod front;
         mod local;
         mod remote;
-        pub mod front;
 
         #[super::if_precept_in(chat)]
-        pub use local::{Precept, ensure_artilect_user, AGENT_PROMPT_TEXT};
+        pub use local::{AGENT_PROMPT_TEXT, Precept, ensure_artilect_user};
     }
 
     #[precept]

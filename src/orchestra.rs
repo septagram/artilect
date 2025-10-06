@@ -1,10 +1,11 @@
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
+
 use artilect_macro::orchestra_from_precepts;
 use cfg_block::cfg_block;
+
 use crate::precept::Identity;
 
-orchestra_from_precepts!{
+orchestra_from_precepts! {
     // auth: cortex::auth,
     chat: vector::chat,
     telegram: vector::telegram,

@@ -48,21 +48,13 @@ impl Default for OpenAIMessage {
 #[serde(tag = "type")]
 pub enum OpenAIContentPart {
     #[serde(rename = "text")]
-    Text {
-        text: String
-    },
+    Text { text: String },
     #[serde(rename = "image_url")]
-    ImageUrl {
-        image_url: String
-    },
+    ImageUrl { image_url: String },
     #[serde(rename = "input_audio")]
-    Audio {
-        input_audio: AudioData
-    },
+    Audio { input_audio: AudioData },
     #[serde(rename = "file")]
-    File {
-        file: FileData
-    }
+    File { file: FileData },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

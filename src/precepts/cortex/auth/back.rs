@@ -1,9 +1,9 @@
 #![feature(let_chains)]
 
 use axum::{
+    Router,
     http::{HeaderValue, Method},
     routing::{get, post},
-    Router,
 };
 use tower_http::cors::CorsLayer;
 
@@ -18,6 +18,6 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .allow_origin("*".parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([http::header::AUTHORIZATION, http::header::CONTENT_TYPE]);
-    
+
     Ok(())
 }

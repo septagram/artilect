@@ -1,13 +1,14 @@
 use std::sync::Arc;
+
 use actix::Actor;
-use uuid::Uuid;
-
-use artilect::precept::client::AddrLocal;
-use artilect::precept::{Identity, PreceptID};
-use artilect::precepts::vector::telegram::{Precept as TelegramPrecept, Resources as TelegramResources};
-
 // Define a local Resources struct that matches the one in the telegram precept
 use artilect::orchestra::Orchestra;
+use artilect::precept::client::AddrLocal; //
+use artilect::{
+    precept::{Identity, PreceptID},
+    precepts::vector::telegram::{Precept as TelegramPrecept, Resources as TelegramResources},
+};
+use uuid::Uuid;
 
 #[actix::main]
 async fn main() {
@@ -17,7 +18,7 @@ async fn main() {
     // Load configuration
     dotenvy::dotenv().ok();
     artilect::config::validate();
-    let name: Box<str> = std::env::var("NAME")
+    let name: Box<str> = std::env::var("NAME") //
         .expect("NAME must be set")
         .trim()
         .into();

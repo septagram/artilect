@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use dioxus::logger::tracing::Level;
-use dioxus::prelude::*;
-use uuid::{uuid, Uuid};
 
-use artilect::orchestra::{use_address_book, Orchestra};
-use artilect::precepts::vector::chat::Addr;
-use artilect::precepts::vector::chat::front::App;
+use artilect::{
+    orchestra::{Orchestra, use_address_book},
+    precepts::vector::chat::{Addr, front::App},
+};
+use dioxus::{logger::tracing::Level, prelude::*};
+use uuid::{Uuid, uuid};
 
 static BASE_URL: &str = dotenvy_macro::dotenv!("CHAT_BASE_URL");
 static USER_ID: Uuid = uuid!(dotenvy_macro::dotenv!("CHAT_USER_ID"));
@@ -25,15 +25,13 @@ fn main() {
         }))
         .launch(|| {
             tracing::info!("Starting app");
-            let orchestra = Arc::new(
-                Orchestra {
-                    chat: Addr::new(Arc::from(BASE_URL)),
-                },
-            );
+            let orchestra = Arc::new(Orchestra {
+                chat: Addr::new(Arc::from(BASE_URL)),
+            });
             let token = Some(Arc::from(USER_ID.to_string()));
             tracing::info!("Using token: {:?}", token);
             use_address_book(orchestra, None, token);
-            rsx!{
+            rsx! {
                 App {}
             }
         });

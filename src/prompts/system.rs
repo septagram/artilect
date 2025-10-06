@@ -2,9 +2,7 @@ use indoc::formatdoc;
 
 use crate::infer::Message;
 
-pub fn system(
-    agent_prompt: &str,
-) -> Message {
+pub fn system(agent_prompt: &str) -> Message {
     Message::new_text_system(formatdoc! {"
             You are {name}, a multi-agent artilect system and {role_short_description}.
 

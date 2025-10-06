@@ -1,3 +1,2 @@
 pub mod message_log;
-pub use message_log::message_log;
-pub use message_log::{MessageLogItem, MessageLogItemRow};
+pub use message_log::{MessageLogItem, MessageLogItemRow, message_log};

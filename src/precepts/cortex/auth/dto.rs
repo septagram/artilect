@@ -1,5 +1,5 @@
 use artilect_macro::dto;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[dto(auth, request)]

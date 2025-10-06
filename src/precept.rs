@@ -4,11 +4,9 @@ pub mod client;
 #[cfg(feature = "backend")]
 mod local;
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-
 #[cfg(feature = "backend")]
 pub use local::*;
+use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreceptID {
@@ -65,7 +63,11 @@ pub trait Message: Send + Sync + 'static {
 pub trait MessageLocalStrategy<P: Precept>: Message {
     #[cfg(feature = "server-http2")]
     fn route(router: axum::Router<actix::Addr<P>>) -> axum::Router<actix::Addr<P>>;
-    fn handle(resources: &P::Resources, from: Identity, message: Self) -> impl Future<Output = Result<Self::Response>>;
+    fn handle(
+        resources: &P::Resources,
+        from: Identity,
+        message: Self,
+    ) -> impl Future<Output = Result<Self::Response>>;
 }
 
 #[cfg(feature = "client-http2")]
@@ -111,7 +113,7 @@ impl axum::response::IntoResponse for Error {
 
         match message {
             Some(error) => (status, axum::Json(HttpErrorBody { error })).into_response(),
-            None => status.into_response()
+            None => status.into_response(),
         }
     }
 }

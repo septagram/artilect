@@ -1,5 +1,6 @@
-use once_cell::sync::Lazy;
 use std::env;
+
+use once_cell::sync::Lazy;
 
 pub static DEFAULT_MODEL: Lazy<Box<str>> = Lazy::new(|| {
     env::var("DEFAULT_MODEL")
@@ -39,9 +40,8 @@ pub static MODEL_HAS_REASONING: Lazy<bool> = Lazy::new(|| {
         .expect("MODEL_HAS_REASONING must be 'true' or 'false'")
 });
 
-pub static MODEL_HAS_TOGGLEABLE_REASONING: Lazy<bool> = Lazy::new(|| {
-    !THINK_ON_POSTFIX.is_empty() || !THINK_OFF_POSTFIX.is_empty()
-});
+pub static MODEL_HAS_TOGGLEABLE_REASONING: Lazy<bool> =
+    Lazy::new(|| !THINK_ON_POSTFIX.is_empty() || !THINK_OFF_POSTFIX.is_empty());
 
 pub fn validate() {
     // Trigger the lazy statics to force panics early

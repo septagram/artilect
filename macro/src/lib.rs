@@ -4,11 +4,11 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{DeriveInput, parse_macro_input};
 
-mod precept;
 mod dto;
 mod orchestra;
+mod precept;
 mod util;
 
 macro_rules! export_attribute {
@@ -17,7 +17,7 @@ macro_rules! export_attribute {
         pub fn $func(input: TokenStream, item: TokenStream) -> TokenStream {
             $module::$func(input, item)
         }
-    }
+    };
 }
 
 macro_rules! export_derive {
@@ -26,7 +26,7 @@ macro_rules! export_derive {
         pub fn $func(input: TokenStream) -> TokenStream {
             $module::$func(input)
         }
-    }
+    };
 }
 
 macro_rules! export_macro {
@@ -35,7 +35,7 @@ macro_rules! export_macro {
         pub fn $func(input: TokenStream) -> TokenStream {
             $module::$func(input)
         }
-    }
+    };
 }
 
 export_attribute!(precept::if_precept);

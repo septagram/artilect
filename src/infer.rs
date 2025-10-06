@@ -1,13 +1,14 @@
+use std::sync::Arc;
+
 use indoc::formatdoc;
 use ouroboros::self_referencing;
 use uuid::Uuid;
-use std::sync::Arc;
 
 pub mod config;
 mod error;
 pub use error::InferError;
 mod openai;
-use openai::{ApiError, OpenAIMessage, OpenAIContentPart};
+use openai::{ApiError, OpenAIContentPart, OpenAIMessage};
 mod parsing;
 mod util;
 
@@ -238,10 +239,11 @@ impl<'a> Chain<'a> {
             Ok(response) => {
                 tracing::info!("Response:\n{}", util::wrap_and_indent_yaml(&response));
                 Ok(response)
-            },
+            }
             Err(error) => match error {
                 ApiError::ErrorResponse(error_text) => Err(
-                    match Box::pin(is_context_length_error(self.client, error_text.as_str())).await {
+                    match Box::pin(is_context_length_error(self.client, error_text.as_str())).await
+                    {
                         Ok(true) => InferError::ContextLengthError(Arc::from(error_text)),
                         Ok(false) => ApiError::ErrorResponse(error_text.clone()).into(),
                         Err(second_error) => {
@@ -287,11 +289,9 @@ impl<'a> Chain<'a> {
             let value_response = self
                 .clone()
                 .with_item(ChainItem::NewMessage(MessageRole::Assistant))
-                .with_item(
-                    ChainItem::ContentBlock(
-                        ContentBlock::Text(format!("\n<think>{reasoning_response}</think>\n\n").into())
-                    )
-                )
+                .with_item(ChainItem::ContentBlock(ContentBlock::Text(
+                    format!("\n<think>{reasoning_response}</think>\n\n").into(),
+                )))
                 .infer_str(None)
                 .await?;
             let value = WithReasoning::<T> {
@@ -354,45 +354,42 @@ impl<'a> Chain<'a> {
         let first_item = chain_items.next();
         match first_item {
             None => return Vec::new(),
-            Some(first_item) => {
-                match first_item {
-                    ChainItem::NewMessage(role) => {
-                        let mut messages = Vec::with_capacity(self.message_count);
-                        let mut cur_message = OpenAIMessage {
-                            role: role.into_role_str(do_convert_system_to_user),
-                            content: Vec::new(),
-                        };
-                        for item in chain_items {
-                            match item {
-                                ChainItem::NewMessage(role) => {
-                                    messages.push(std::mem::take(&mut cur_message));
-                                    cur_message.role = role.into_role_str(do_convert_system_to_user);
-                                },
-                                ChainItem::ContentBlock(block) => {
-                                    match block {
-                                        ContentBlock::Text(text) => {
-                                            let last_content = cur_message.content.last_mut();
-                                            if let Some(last_content) = last_content 
-                                                && let OpenAIContentPart::Text { text: last_text } = last_content
-                                                && !last_text.is_empty()
-                                            {
-                                                last_text.push_str(text.as_ref());
-                                            } else {
-                                                cur_message.content.push(OpenAIContentPart::Text {
-                                                    text: text.to_string(),
-                                                });
-                                            }
-                                        },
-                                    }
-                                },
+            Some(first_item) => match first_item {
+                ChainItem::NewMessage(role) => {
+                    let mut messages = Vec::with_capacity(self.message_count);
+                    let mut cur_message = OpenAIMessage {
+                        role: role.into_role_str(do_convert_system_to_user),
+                        content: Vec::new(),
+                    };
+                    for item in chain_items {
+                        match item {
+                            ChainItem::NewMessage(role) => {
+                                messages.push(std::mem::take(&mut cur_message));
+                                cur_message.role = role.into_role_str(do_convert_system_to_user);
                             }
+                            ChainItem::ContentBlock(block) => match block {
+                                ContentBlock::Text(text) => {
+                                    let last_content = cur_message.content.last_mut();
+                                    if let Some(last_content) = last_content
+                                        && let OpenAIContentPart::Text { text: last_text } =
+                                            last_content
+                                        && !last_text.is_empty()
+                                    {
+                                        last_text.push_str(text.as_ref());
+                                    } else {
+                                        cur_message.content.push(OpenAIContentPart::Text {
+                                            text: text.to_string(),
+                                        });
+                                    }
+                                }
+                            },
                         }
-                        messages.push(cur_message);
-                        messages
-                    },
-                    _ => panic!("First item must be NewMessage"),
+                    }
+                    messages.push(cur_message);
+                    messages
                 }
-            }
+                _ => panic!("First item must be NewMessage"),
+            },
         }
     }
 }
@@ -409,19 +406,17 @@ impl RootChain {
     pub fn from_message(client: Client, message: Message) -> Self {
         RootChainBuilder {
             client,
-            chain_builder: |client| {
-                Chain::new(client).with_message(message)
-            },
-        }.build()
+            chain_builder: |client| Chain::new(client).with_message(message),
+        }
+        .build()
     }
 
     pub fn from_messages(client: Client, messages: impl IntoIterator<Item = Message>) -> Self {
         RootChainBuilder {
             client,
-            chain_builder: |client| {
-                Chain::new(client).with_messages(messages)
-            },
-        }.build()
+            chain_builder: |client| Chain::new(client).with_messages(messages),
+        }
+        .build()
     }
 
     pub fn fork(&self) -> Chain {
@@ -446,18 +441,14 @@ pub async fn is_context_length_error(client: &Client, error: &str) -> Result<boo
     let quoted_error = format!("\"{}\"", error.replace('\\', "\\\\").replace('"', "\\\""));
 
     Ok(Chain::new(client)
-        .with_message(
-            Message::new_text_user(
-                formatdoc! {"
-                    The following is an error message from OpenAI: {quoted_error}.
-                    Is this an error about context length?
+        .with_message(Message::new_text_user(formatdoc! {"
+            The following is an error message from OpenAI: {quoted_error}.
+            Is this an error about context length?
 
-                    With no preamble, respond with a JSON object in the following format: {{
-                        \"answer\": true if this is a context length error, false otherwise
-                    }}
-                "}
-            )
-        )
+            With no preamble, respond with a JSON object in the following format: {{
+                \"answer\": true if this is a context length error, false otherwise
+            }}
+        "}))
         .infer_drop::<YesNoReply>(false)
         .await?
         .value
@@ -467,10 +458,10 @@ pub async fn is_context_length_error(client: &Client, error: &str) -> Result<boo
 #[cfg(test)]
 mod tests {
     use artilect_macro::FromLlmReplyArrayItem;
+    use dotenvy::dotenv;
     use once_cell::sync::Lazy;
     use parsing::{FromLlmReplyArray, FromLlmReplyArrayItem};
     use serde::Deserialize;
-    use dotenvy::dotenv;
 
     use super::*;
 

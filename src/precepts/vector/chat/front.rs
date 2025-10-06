@@ -1,5 +1,4 @@
-use dioxus::logger::tracing::info;
-use dioxus::prelude::*;
+use dioxus::{logger::tracing::info, prelude::*};
 use uuid::Uuid;
 
 mod components;

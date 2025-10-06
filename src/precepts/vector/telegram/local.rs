@@ -1,14 +1,17 @@
 use std::sync::Arc;
+
 use artilect_macro::precept;
-use teloxide::prelude::*;
-use teloxide::adaptors::DefaultParseMode;
-use teloxide::types::{ParseMode, Message};
-use teloxide::dispatching::{Dispatcher, UpdateFilterExt};
-use teloxide::utils::command::BotCommands;
-use crate::orchestra::AddressBook;
+use teloxide::{
+    adaptors::DefaultParseMode,
+    dispatching::{Dispatcher, UpdateFilterExt},
+    prelude::*,
+    types::{Message, ParseMode},
+    utils::command::BotCommands,
+};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use crate::precept::SignedMessage;
+
+use crate::{orchestra::AddressBook, precept::SignedMessage};
 
 #[precept()]
 pub struct Precept {
@@ -40,18 +43,25 @@ impl Precept {
         }
     }
 
-    async fn handle_command(bot: DefaultParseMode<Bot>, msg: Message, cmd: Command) -> Result<(), teloxide::RequestError> {
+    async fn handle_command(
+        bot: DefaultParseMode<Bot>,
+        msg: Message,
+        cmd: Command,
+    ) -> Result<(), teloxide::RequestError> {
         match cmd {
             Command::Login(code) => {
-                let _ = Uuid::parse_str(&code).map_err(|e| {
-                    println!("Failed to parse UUID: {}", e);
-                }).map(|uuid| {
-                    println!("Successfully parsed UUID: {}", uuid);
-                    uuid
-                });
+                let _ = Uuid::parse_str(&code)
+                    .map_err(|e| {
+                        println!("Failed to parse UUID: {}", e);
+                    })
+                    .map(|uuid| {
+                        println!("Successfully parsed UUID: {}", uuid);
+                        uuid
+                    });
             }
             Command::Help => {
-                bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
+                bot.send_message(msg.chat.id, Command::descriptions().to_string())
+                    .await?;
             }
         }
         Ok(())
@@ -60,9 +70,11 @@ impl Precept {
     async fn run_bot(bot: DefaultParseMode<Bot>) {
         let handler = Update::filter_message()
             .filter_command::<Command>()
-            .endpoint(|bot: DefaultParseMode<Bot>, msg: Message, cmd: Command| async move {
-                Self::handle_command(bot, msg, cmd).await
-            });
+            .endpoint(
+                |bot: DefaultParseMode<Bot>, msg: Message, cmd: Command| async move {
+                    Self::handle_command(bot, msg, cmd).await
+                },
+            );
 
         Dispatcher::builder(bot, handler)
             .enable_ctrlc_handler()

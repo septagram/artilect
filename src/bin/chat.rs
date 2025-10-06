@@ -1,21 +1,16 @@
-use std::env::VarError;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{env::VarError, net::SocketAddr, sync::Arc};
+
 use actix::Actor;
+use artilect::{
+    infer::RootChain,
+    orchestra::Orchestra,
+    precept::{Identity, PreceptID, Routable, client::AddrLocal},
+    precepts::vector::chat::{AGENT_PROMPT_TEXT, Precept as ChatPrecept, ensure_artilect_user},
+};
 use http::{HeaderValue, Method};
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
-
-use artilect::infer::RootChain;
-use artilect::precept::client::AddrLocal;
-use artilect::precept::{Identity, PreceptID, Routable};
-use artilect::precepts::vector::chat::{
-    ensure_artilect_user,
-    AGENT_PROMPT_TEXT,
-    Precept as ChatPrecept
-};
-use artilect::orchestra::Orchestra;
 
 #[actix::main]
 async fn main() {
@@ -52,7 +47,8 @@ async fn main() {
         .await
         .expect("Failed to ensure Artilect user");
 
-    let system_prompt = RootChain::from_message(infer_client, artilect::prompts::system(AGENT_PROMPT_TEXT));
+    let system_prompt =
+        RootChain::from_message(infer_client, artilect::prompts::system(AGENT_PROMPT_TEXT));
 
     // Create shared state
     let router = {
@@ -68,13 +64,14 @@ async fn main() {
             ),
             pool,
             self_user,
-            system_prompt
-        ).start();
+            system_prompt,
+        )
+        .start();
         let router = chat_actor.clone().build_router();
         chat_addr.set(chat_actor).unwrap();
         router
     };
-    
+
     // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin("*".parse::<HeaderValue>().unwrap())

@@ -1,26 +1,29 @@
 use std::path::MAIN_SEPARATOR;
+
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote};
-use syn::punctuated::Punctuated;
+use quote::{ToTokens, quote};
+use syn::{parse_macro_input, parse_quote, punctuated::Punctuated};
 
 use crate::util::unpack_generic;
 
-fn precept_conditional_compilation_attr(precept_name: &syn::Ident, feature_name: Option<&str>) -> syn::Attribute {
+fn precept_conditional_compilation_attr(
+    precept_name: &syn::Ident,
+    feature_name: Option<&str>,
+) -> syn::Attribute {
     match feature_name {
         Some(feature_name) => {
             let feature = format!("{}-{}", precept_name, feature_name);
             parse_quote! {
                 #[cfg(feature = #feature)]
             }
-        },
+        }
         None => {
             let feature_in = format!("{}-in", precept_name);
             let feature_out = format!("{}-out", precept_name);
             parse_quote! {
                 #[cfg(any(feature = #feature_in, feature = #feature_out))]
             }
-        },
+        }
     }
 }
 
@@ -64,7 +67,10 @@ fn get_precept_ident() -> syn::Ident {
     let current_file_path = current_file_path();
     let mut split_path: Vec<&str> = current_file_path.split(MAIN_SEPARATOR).collect();
     split_path.push(split_path.last().unwrap().split('.').next().unwrap());
-    let pos = split_path.iter().position(|cur| *cur == "local").unwrap_or(0);
+    let pos = split_path
+        .iter()
+        .position(|cur| *cur == "local")
+        .unwrap_or(0);
     if pos == 0 {
         panic!("Could not find precept name in file path");
     };
@@ -90,15 +96,22 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
     );
     for item in items.iter_mut() {
         match item {
-            syn::Item::Mod(inner_module) => {
-                match inner_module.ident.to_string().as_str() {
-                    "local" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("in"))),
-                    "remote" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("out"))),
-                    "front" => inner_module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, Some("front"))),
-                    _ => {},
-                }
+            syn::Item::Mod(inner_module) => match inner_module.ident.to_string().as_str() {
+                "local" => inner_module.attrs.insert(
+                    0,
+                    precept_conditional_compilation_attr(&precept_name, Some("in")),
+                ),
+                "remote" => inner_module.attrs.insert(
+                    0,
+                    precept_conditional_compilation_attr(&precept_name, Some("out")),
+                ),
+                "front" => inner_module.attrs.insert(
+                    0,
+                    precept_conditional_compilation_attr(&precept_name, Some("front")),
+                ),
+                _ => {}
             },
-            _ => {},
+            _ => {}
         }
     }
     let feature_in = format!("{}-in", precept_name);
@@ -109,12 +122,12 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
                 pub type Addr = crate::precept::client::AddrLocal<local::Precept>;
                 pub type Client = crate::precept::client::ClientLocal<local::Precept>;
             }
-            
+
             #[cfg(all(not(feature = #feature_in), feature = #feature_out))] {
                 pub type Addr = crate::precept::client::AddrRemote;
                 pub type Client = crate::precept::client::ClientRemote;
             }
-            
+
             #[cfg(all(feature = #feature_in, feature = #feature_out))] {
                 pub type Addr = crate::precept::client::Addr<local::Precept>;
                 pub type Client = crate::precept::client::Client<local::Precept>;
@@ -122,7 +135,9 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
         }
     });
     module.content = Some((brace, items));
-    module.attrs.insert(0, precept_conditional_compilation_attr(&precept_name, None));
+    module
+        .attrs
+        .insert(0, precept_conditional_compilation_attr(&precept_name, None));
     module.into_token_stream().into()
 }
 
@@ -130,7 +145,8 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
 // - Implement Precept trait
 pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenStream {
     let struct_name = struct_def.ident.clone();
-    let message_types = parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_terminated);
+    let message_types =
+        parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_terminated);
     println!("ok");
     let message_type_iter = message_types.iter();
     let mut resources_type = None;
@@ -138,11 +154,12 @@ pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenSt
         match field.ident.as_ref().unwrap().to_string().as_str() {
             "resources" => {
                 resources_type = Some(unpack_generic(&field.ty, "Arc", "resources"));
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
-    let resources_type = resources_type.expect("Precept struct must have a field named `resources`");
+    let resources_type =
+        resources_type.expect("Precept struct must have a field named `resources`");
     quote! {
         #struct_def
 
@@ -181,15 +198,15 @@ pub fn precept_message(_: TokenStream, item: TokenStream) -> TokenStream {
     let mut item = parse_macro_input!(item as syn::ItemImpl);
     for item in item.items.iter_mut() {
         match item {
-            syn::ImplItem::Fn(fn_impl) => {
-                match fn_impl.sig.ident.to_string().as_str() {
-                    "route" => fn_impl.attrs.insert(0, parse_quote! { #[cfg(feature = "server-http2")] }),
-                    _ => {},
-                }
+            syn::ImplItem::Fn(fn_impl) => match fn_impl.sig.ident.to_string().as_str() {
+                "route" => fn_impl
+                    .attrs
+                    .insert(0, parse_quote! { #[cfg(feature = "server-http2")] }),
+                _ => {}
             },
-            _ => {},
+            _ => {}
         }
-    };
+    }
     item.into_token_stream().into()
 }
 

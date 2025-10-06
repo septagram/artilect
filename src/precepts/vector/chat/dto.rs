@@ -1,19 +1,17 @@
+#[cfg(feature = "backend")]
+#[allow(unused_imports)]
+use actix::Message;
+#[cfg(feature = "client")]
+#[allow(unused_imports)]
+use artilect_macro::Identifiable;
 use artilect_macro::dto;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-#[cfg(feature = "backend")]
-#[allow(unused_imports)]
-use actix::Message;
-
 #[cfg(feature = "client")]
 #[allow(unused_imports)]
 use crate::Identifiable;
-
-#[cfg(feature = "client")]
-#[allow(unused_imports)]
-use artilect_macro::Identifiable;
 
 // cargo expand --lib vector::chat::dto --features="server-http2 chat-in auth-out" 2> /dev/null | head -n 100
 #[dto(chat, response)]

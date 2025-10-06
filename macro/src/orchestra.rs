@@ -1,12 +1,17 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, punctuated::Punctuated, Token};
+use syn::{
+    Token,
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+    punctuated::Punctuated,
+};
 
 use crate::util::capitalize;
 
 pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
-    let precepts = parse_macro_input!(input with Punctuated::<PreceptField, syn::Token![,]>::parse_terminated);
+    let precepts =
+        parse_macro_input!(input with Punctuated::<PreceptField, syn::Token![,]>::parse_terminated);
     let mut orchestra_fields = proc_macro2::TokenStream::new();
     let mut address_book_fields = proc_macro2::TokenStream::new();
     let mut address_book_converters = proc_macro2::TokenStream::new();

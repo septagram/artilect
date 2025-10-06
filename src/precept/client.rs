@@ -1,7 +1,9 @@
 use std::sync::Arc;
+
 use cfg_block::cfg_block;
 use serde::de::DeserializeOwned;
-use super::{Identity, SignedMessage, Error};
+
+use super::{Error, Identity, SignedMessage};
 
 cfg_block! {
     #[cfg(feature = "backend")] {
@@ -54,11 +56,11 @@ cfg_block! {
                     .map_actix_error()
             }
         }
-        
+
         pub trait ActixResult<T> {
             fn map_actix_error(self: Self) -> super::Result<T>;
         }
-        
+
         impl<T> ActixResult<T> for Result<super::Result<T>, actix::MailboxError> {
             fn map_actix_error(self: Self) -> super::Result<T> {
                 match self {
@@ -85,12 +87,12 @@ cfg_block! {
         pub struct AddrRemote {
             base_url: Arc<str>,
         }
-        
+
         impl AddrRemote {
             pub fn new(base_url: Arc<str>) -> Self {
                 Self { base_url }
             }
-            
+
             pub fn to_client(&self, _client_id: Option<Identity>, token: Option<Arc<str>>) -> ClientRemote {
                 ClientRemote { token, base_url: self.base_url.clone() }
             }
@@ -140,7 +142,7 @@ cfg_block! {
                         //     Err(Error::ServiceUnavailable)
                         // } else {
                         //     Err(Error::InvalidResponse)
-                        // } 
+                        // }
                     },
                 }
             }
@@ -153,12 +155,12 @@ cfg_block! {
             Local(AddrLocal<P>),
             Remote(AddrRemote),
         }
-        
+
         impl<P: actix::Actor> Addr<P> {
             pub fn new_local() -> (AddrLocal<P>, Arc<SetOnce<actix::Addr<P>>>) {
                 AddrLocal::<P>::new()
             }
-            
+
             pub fn new_remote(base_url: Arc<str>) -> AddrRemote {
                 AddrRemote::new(base_url)
             }

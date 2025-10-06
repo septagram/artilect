@@ -1,10 +1,13 @@
-use dioxus::prelude::*;
 use std::collections::HashMap;
+
+use dioxus::prelude::*;
 use uuid::Uuid;
 
 pub mod actions;
-use crate::precepts::vector::chat::dto::{ChatMessage, SyncUpdate, Thread};
-use crate::Identifiable;
+use crate::{
+    Identifiable,
+    precepts::vector::chat::dto::{ChatMessage, SyncUpdate, Thread},
+};
 
 static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
 
