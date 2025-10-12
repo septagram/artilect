@@ -233,10 +233,7 @@ pub fn route_callback(item: TokenStream) -> TokenStream {
             let data: Self = #body;
             precept
                 .send(SignedMessage {
-                    from: Identity {
-                        user_id,
-                        precept_id: None,
-                    },
+                    from: Identity::User(user_id),
                     data,
                 })
                 .await

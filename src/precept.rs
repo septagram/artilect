@@ -43,15 +43,24 @@ pub struct SignedMessage<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Identity {
-    pub user_id: Uuid,
-    pub precept_id: Option<PreceptID>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Identity {
+    User(Uuid),
+    Service {
+        id: PreceptID,
+        on_behalf_of: Option<Uuid>,
+    },
 }
 
-impl PartialEq for Identity {
-    fn eq(&self, other: &Self) -> bool {
-        self.user_id == other.user_id && self.precept_id == other.precept_id
+impl Identity {
+    pub fn to_user_id(&self, allow_on_behalf: bool) -> Option<Uuid> {
+        match self {
+            Self::User(id) => Some(*id),
+            Self::Service { on_behalf_of, .. } => match allow_on_behalf {
+                true => *on_behalf_of,
+                false => None,
+            },
+        }
     }
 }
 

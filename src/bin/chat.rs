@@ -56,9 +56,9 @@ async fn main() {
         let orchestra = Orchestra { chat };
         let chat_actor = ChatPrecept::new(
             orchestra.to_address_book(
-                Some(Identity {
-                    user_id: Uuid::nil(),
-                    precept_id: Some(PreceptID::Chat),
+                Some(Identity::Service {
+                    id: PreceptID::Chat,
+                    on_behalf_of: None,
                 }),
                 None,
             ),

@@ -393,6 +393,12 @@ async fn respond_to_thread(
     }
 }
 
+fn to_user_id_only(identity: &Identity) -> precept::Result<Uuid> {
+    identity.to_user_id(false).ok_or(
+        precept::Error::Internal(anyhow::anyhow!("Chat API called by another precept (forbidden)."))
+    )
+}
+
 #[precept_message]
 impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
     fn route(router: Router<Addr<Precept>>) -> Router<Addr<Precept>> {
@@ -404,12 +410,10 @@ impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
 
     async fn handle(
         res: &Resources,
-        Identity {
-            user_id,
-            precept_id: _,
-        }: Identity,
+        from: Identity,
         _: FetchUserThreadsRequest,
     ) -> precept::Result<FetchUserThreadsResponse> {
+        let user_id = to_user_id_only(&from)?;
         let user = sqlx::query_as!(
             User,
             r#"--sql
@@ -464,12 +468,10 @@ impl MessageLocalStrategy<Precept> for FetchThreadRequest {
 
     async fn handle(
         res: &Resources,
-        Identity {
-            user_id,
-            precept_id: _,
-        }: Identity,
+        from: Identity,
         FetchThreadRequest { thread_id }: FetchThreadRequest,
     ) -> precept::Result<FetchThreadResponse> {
+        let user_id = to_user_id_only(&from)?;
         let thread = fetch_thread_for_user(res, user_id, thread_id).await?;
         let messages = sqlx::query_as!(
             ChatMessage,
@@ -506,12 +508,10 @@ impl MessageLocalStrategy<Precept> for SendMessageRequest {
 
     async fn handle(
         res: &Resources,
-        Identity {
-            user_id,
-            precept_id: _,
-        }: Identity,
+        from: Identity,
         request: SendMessageRequest,
     ) -> precept::Result<SendMessageResponse> {
+        let user_id = to_user_id_only(&from)?;
         let thread_id = request.message.thread_id;
         if request.is_new_thread {
             create_thread(&res.pool, user_id, thread_id).await?;
