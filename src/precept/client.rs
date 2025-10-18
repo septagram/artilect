@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cfg_block::cfg_block;
 use serde::de::DeserializeOwned;
 
-use super::{Error, Identity, SignedMessage};
+use super::{Error, Identity, SignedMessage, UnauthorizedError};
 
 cfg_block! {
     #[cfg(feature = "backend")] {
@@ -28,7 +28,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub struct ClientLocal<T: actix::Actor> {
             addr: Arc<SetOnce<actix::Addr<T>>>,
             client_id: Identity,
@@ -81,7 +81,7 @@ cfg_block! {
     }
 
     #[cfg(feature = "client-http2")] {
-        use super::HttpErrorBody;
+        use super::HttpErrorBodyBadRequest;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
@@ -121,11 +121,14 @@ cfg_block! {
                             response.json::<S::Response>().await.map_err(|_| Error::InvalidResponse)
                         } else {
                             Err(match status.as_u16() {
-                                400 => match response.json::<HttpErrorBody>().await {
+                                400 => match response.json::<HttpErrorBodyBadRequest>().await {
                                     Ok(body) => Error::BadRequest(body.error),
                                     Err(_) => Error::InvalidResponse,
                                 },
-                                401 => Error::Unauthorized,
+                                401 => match response.json::<UnauthorizedError>().await {
+                                    Ok(body) => Error::Unauthorized(body),
+                                    Err(_) => Error::InvalidResponse,
+                                },
                                 403 => Error::Forbidden,
                                 404 => Error::NotFound,
                                 500 => Error::Internal(anyhow::anyhow!("Internal error")),

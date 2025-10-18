@@ -9,7 +9,7 @@ pub fn derive_identifiable(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let expanded = quote! {
-        impl Identifiable for #name {
+        impl crate::Identifiable for #name {
             fn get_id(&self) -> uuid::Uuid {
                 self.id
             }
@@ -47,9 +47,10 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut args = args.into_iter();
 
     // The first argument is the precept name (must be a single identifier)
-    let precept_name = args
+    let precept_name: syn::Ident = args
         .next()
-        .expect("Expected precept name as first argument");
+        .expect("Expected precept name or 'always' as first argument");
+    let precept_name = if precept_name == "always" { None } else { Some(precept_name) };
 
     // The rest are flags
     let mut flags = DtoFlags::default();
@@ -67,9 +68,14 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut universal_derives: Vec<syn::Path> = vec![syn::parse_quote!(Debug)];
     let mut item: syn::Item = syn::parse_macro_input!(item as syn::Item);
-    let feature_in = format!("{}-in", precept_name);
-    let feature_out = format!("{}-out", precept_name);
-    let feature_front = format!("{}-front", precept_name);
+    let (feature_in, feature_out, feature_front) = match precept_name {
+        Some(precept_name) => (
+            format!("{}-in", precept_name),
+            format!("{}-out", precept_name),
+            format!("{}-front", precept_name),
+        ),
+        None => ("backend".into(), "client".into(), "frontend".into()),
+    };
 
     // Get a mutable reference to attrs for supported item types
     let (item_attrs, item_ident) = match &mut item {
@@ -87,7 +93,7 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     if flags.ui {
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_front, derive(PartialEq, Identifiable))]
+            #[cfg_attr(feature = #feature_front, derive(PartialEq, artilect_macro::Identifiable))]
         });
     }
 

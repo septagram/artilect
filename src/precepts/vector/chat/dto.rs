@@ -12,6 +12,7 @@ use uuid::Uuid;
 #[cfg(feature = "client")]
 #[allow(unused_imports)]
 use crate::Identifiable;
+use crate::auth::User;
 
 // cargo expand --lib vector::chat::dto --features="server-http2 chat-in auth-out" 2> /dev/null | head -n 100
 #[dto(chat, response)]
@@ -30,12 +31,6 @@ pub enum OneToManyChild<T> {
 pub struct OneToManyUpdate<T> {
     pub owner_id: Uuid,
     pub children: Vec<OneToManyChild<T>>,
-}
-
-#[dto(chat, db, ui, clone, request, response)]
-pub struct User {
-    pub id: Uuid,
-    pub name: String,
 }
 
 #[dto(chat, db, ui, clone, request, response)]

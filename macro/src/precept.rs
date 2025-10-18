@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{parse_macro_input, parse_quote, punctuated::Punctuated};
 
-use crate::util::unpack_generic;
+use crate::util::{take_attribute, unpack_generic};
 
 fn precept_conditional_compilation_attr(
     precept_name: &syn::Ident,
@@ -89,7 +89,9 @@ pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 // - Add correct conditional compilation attributes onto a precept module and its submodules
-pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
+pub fn precept_mod(args: TokenStream, mut module: syn::ItemMod) -> TokenStream {
+    let is_always_included = parse_macro_input!(args as Option<syn::Ident>)
+        .map_or(false, |ident| ident == "always");
     let precept_name = module.ident.clone();
     let (brace, mut items) = module.content.take().expect(
         "Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file."
@@ -117,6 +119,10 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
     let feature_in = format!("{}-in", precept_name);
     let feature_out = format!("{}-out", precept_name);
     items.push(parse_quote! {
+        #[cfg(feature = #feature_in)]
+        pub use local::{Precept, Resources};
+    });
+    items.push(parse_quote! {
         cfg_block::cfg_block! {
             #[cfg(all(feature = #feature_in, not(feature = #feature_out)))] {
                 pub type Addr = crate::precept::client::AddrLocal<local::Precept>;
@@ -135,49 +141,78 @@ pub fn precept_mod(_: TokenStream, mut module: syn::ItemMod) -> TokenStream {
         }
     });
     module.content = Some((brace, items));
-    module
-        .attrs
-        .insert(0, precept_conditional_compilation_attr(&precept_name, None));
+    if !is_always_included {
+        module
+            .attrs
+            .insert(0, precept_conditional_compilation_attr(&precept_name, None));
+    }
     module.into_token_stream().into()
 }
 
 // - Combine all the Add message routes into the precept router
 // - Implement Precept trait
-pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenStream {
+pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> TokenStream {
     let struct_name = struct_def.ident.clone();
     let message_types =
         parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_terminated);
-    println!("ok");
     let message_type_iter = message_types.iter();
+    let has_custom_router = take_attribute("custom_router", &mut struct_def.attrs).is_some();
     let mut resources_type = None;
+    let mut state_type = None;
     for field in struct_def.fields.iter() {
         match field.ident.as_ref().unwrap().to_string().as_str() {
             "resources" => {
-                resources_type = Some(unpack_generic(&field.ty, "Arc", "resources"));
+                resources_type = Some(unpack_generic(&field.ty, &["Arc"], "resources"));
+            }
+            "state" => {
+                state_type = Some(unpack_generic(&field.ty, &["Arc"], "state"));
             }
             _ => {}
         }
     }
     let resources_type =
         resources_type.expect("Precept struct must have a field named `resources`");
+    let (state_retriever, state_passer, state_type) = match state_type {
+        Some(state_type) => (
+            quote! {
+                let state = self.state.clone();
+            },
+            quote! { &*state },
+            quote! { &#state_type },
+        ),
+        None => (
+            quote! {},
+            quote! {&()},
+            parse_quote! {()},
+        ),
+    };
+    
+    let router_impl: Option<syn::ItemImpl> = match has_custom_router {
+        false => Some(parse_quote! {
+            #[cfg(feature = "server-http2")]
+            impl crate::precept::Routable for actix::Addr<#struct_name> {
+                fn build_router(self) -> axum::Router {
+                    let mut router = axum::Router::new();
+                    #(router = #message_type_iter::route(router);)*
+                    router.with_state(self)
+                }
+            }
+        }),
+        true => None,
+    };
+
     quote! {
         #struct_def
+        
+        #router_impl
 
         impl crate::precept::Precept for #struct_name {
             type Resources = #resources_type;
+            type State = #state_type;
         }
 
         impl actix::Supervised for #struct_name {}
-
-        #[cfg(feature = "server-http2")]
-        impl crate::precept::Routable for actix::Addr<#struct_name> {
-            fn build_router(self) -> axum::Router {
-                let mut router = axum::Router::new();
-                #(router = #message_type_iter::route(router);)*
-                router.with_state(self)
-            }
-        }
-
+        
         impl <M> actix::Handler<SignedMessage<M>> for #struct_name
         where
             M: crate::precept::MessageLocalStrategy<#struct_name>,
@@ -186,8 +221,9 @@ pub fn precept_struct(attr: TokenStream, struct_def: syn::ItemStruct) -> TokenSt
 
             fn handle(&mut self, message: crate::precept::SignedMessage<M>, _: &mut Self::Context) -> Self::Result {
                 let resources = self.resources.clone();
+                #state_retriever
                 Box::pin(async move {
-                    M::handle(&*resources, message.from, message.data).await
+                    M::handle(&*resources, #state_passer, message.from, message.data).await
                 })
             }
         }
@@ -221,19 +257,14 @@ pub fn route_callback(item: TokenStream) -> TokenStream {
     quote! {
         async |
             axum::extract::State(precept): axum::extract::State<actix::Addr<Precept>>,
-            auth_header: axum_extra::TypedHeader<
-                headers::authorization::Authorization<
-                    headers::authorization::Bearer
-                >
-            >,
+            from: crate::precept::Identity,
             #inputs
-        | -> precept::Result<axum::Json<Self::Response>> {
+        | -> crate::precept::Result<axum::Json<Self::Response>> {
             use crate::precept::ActixResult;
-            let user_id = Uuid::parse_str(&auth_header.token()).map_err(|_| precept::Error::Unauthorized)?;
             let data: Self = #body;
             precept
                 .send(SignedMessage {
-                    from: Identity::User(user_id),
+                    from,
                     data,
                 })
                 .await

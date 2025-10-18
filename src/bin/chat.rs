@@ -5,12 +5,16 @@ use artilect::{
     infer::RootChain,
     orchestra::Orchestra,
     precept::{Identity, PreceptID, Routable, client::AddrLocal},
-    precepts::vector::chat::{AGENT_PROMPT_TEXT, Precept as ChatPrecept, ensure_artilect_user},
+    precepts::{
+        cortex::auth::middleware::RouterAuth,
+        vector::chat::{AGENT_PROMPT_TEXT, Precept as ChatPrecept, ensure_artilect_user},
+    },
 };
 use http::{HeaderValue, Method};
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
+use artilect::precepts::cortex::auth;
 
 #[actix::main]
 async fn main() {
@@ -56,7 +60,7 @@ async fn main() {
         let orchestra = Orchestra { chat };
         let chat_actor = ChatPrecept::new(
             orchestra.to_address_book(
-                Some(Identity::Service {
+                Some(Identity::Precept {
                     id: PreceptID::Chat,
                     on_behalf_of: None,
                 }),
@@ -67,7 +71,7 @@ async fn main() {
             system_prompt,
         )
         .start();
-        let router = chat_actor.clone().build_router();
+        let router = chat_actor.clone().build_router().require_access_token();
         chat_addr.set(chat_actor).unwrap();
         router
     };

@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use time::format_description::{self, FormatItem};
 use uuid::Uuid;
 
-use super::super::super::dto::User;
+use crate::auth::User;
 use crate::infer;
 
 static DATE_FORMAT: Lazy<Vec<FormatItem>> = Lazy::new(|| {

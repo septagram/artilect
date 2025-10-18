@@ -15,12 +15,13 @@ use uuid::Uuid;
 use super::dto::{
     ChatMessage, FetchThreadRequest, FetchThreadResponse, FetchUserThreadsRequest,
     FetchUserThreadsResponse, OneToManyChild, OneToManyUpdate, SendMessageRequest,
-    SendMessageResponse, SyncUpdate, Thread, User,
+    SendMessageResponse, SyncUpdate, Thread,
 };
 use crate::{
     infer::{self, PlainText, RootChain},
     orchestra::AddressBook,
     precept::{self, CoercibleResult, Identity, MessageLocalStrategy, SignedMessage},
+    auth::User,
 };
 
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
@@ -394,8 +395,8 @@ async fn respond_to_thread(
 }
 
 fn to_user_id_only(identity: &Identity) -> precept::Result<Uuid> {
-    identity.to_user_id(false).ok_or(
-        precept::Error::Internal(anyhow::anyhow!("Chat API called by another precept (forbidden)."))
+    identity.to_user_id(false).ok_or_else(
+        || precept::Error::Internal(anyhow::anyhow!("Chat API called by another precept (forbidden)."))
     )
 }
 
@@ -410,8 +411,9 @@ impl MessageLocalStrategy<Precept> for FetchUserThreadsRequest {
 
     async fn handle(
         res: &Resources,
+        _: &(),
         from: Identity,
-        _: FetchUserThreadsRequest,
+        _: Self,
     ) -> precept::Result<FetchUserThreadsResponse> {
         let user_id = to_user_id_only(&from)?;
         let user = sqlx::query_as!(
@@ -468,8 +470,9 @@ impl MessageLocalStrategy<Precept> for FetchThreadRequest {
 
     async fn handle(
         res: &Resources,
+        _: &(),
         from: Identity,
-        FetchThreadRequest { thread_id }: FetchThreadRequest,
+        Self { thread_id }: Self,
     ) -> precept::Result<FetchThreadResponse> {
         let user_id = to_user_id_only(&from)?;
         let thread = fetch_thread_for_user(res, user_id, thread_id).await?;
@@ -508,8 +511,9 @@ impl MessageLocalStrategy<Precept> for SendMessageRequest {
 
     async fn handle(
         res: &Resources,
+        _: &(),
         from: Identity,
-        request: SendMessageRequest,
+        request: Self,
     ) -> precept::Result<SendMessageResponse> {
         let user_id = to_user_id_only(&from)?;
         let thread_id = request.message.thread_id;

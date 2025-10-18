@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use serde::Deserialize;
 use uuid::Uuid;
 pub mod client;
@@ -7,8 +8,9 @@ mod local;
 #[cfg(feature = "backend")]
 pub use local::*;
 use serde::{Serialize, de::DeserializeOwned};
+use crate::auth::User;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreceptID {
     #[cfg(any(feature = "auth-in", feature = "auth-out"))]
     Auth,
@@ -23,7 +25,7 @@ pub enum Error {
     #[error("Bad Request: {0}")]
     BadRequest(Box<str>),
     #[error("Unauthorized")]
-    Unauthorized,
+    Unauthorized(#[from] UnauthorizedError),
     #[error("Forbidden")]
     Forbidden,
     #[error("Not Found")]
@@ -38,26 +40,57 @@ pub enum Error {
     Internal(#[from] anyhow::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "server-http2", derive(Serialize))]
+#[cfg_attr(feature = "client-http2", derive(Deserialize))]
+pub enum UnauthorizedError {
+    #[error("Missing authentication")]
+    Missing,
+    #[error("Access token has expired")]
+    ExpiredToken,
+    #[error("Invalid access token")]
+    InvalidToken,
+    #[error("Invalid session")]
+    InvalidSession,
+}
+
 pub struct SignedMessage<T> {
     pub from: Identity,
     pub data: T,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct UserIdentity {
+    user_id: Uuid,
+    // account_id: Uuid,
+    // is_operator: bool,
+    // or role: Role, // derives Copy
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Identity {
-    User(Uuid),
-    Service {
+    User (UserIdentity),
+    Precept {
         id: PreceptID,
-        on_behalf_of: Option<Uuid>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        on_behalf_of: Option<UserIdentity>,
     },
 }
 
 impl Identity {
+    pub fn to_precept_id(&self) -> Option<PreceptID> {
+        match self {
+            Self::Precept { id, .. } => Some(*id),
+            _ => None,
+        }
+    }
+
     pub fn to_user_id(&self, allow_on_behalf: bool) -> Option<Uuid> {
         match self {
-            Self::User(id) => Some(*id),
-            Self::Service { on_behalf_of, .. } => match allow_on_behalf {
-                true => *on_behalf_of,
+            Self::User(user_identity) => Some(user_identity.user_id),
+            Self::Precept { on_behalf_of, .. } => match allow_on_behalf {
+                true => on_behalf_of.as_ref().map(|user_identity| user_identity.user_id),
                 false => None,
             },
         }
@@ -74,6 +107,7 @@ pub trait MessageLocalStrategy<P: Precept>: Message {
     fn route(router: axum::Router<actix::Addr<P>>) -> axum::Router<actix::Addr<P>>;
     fn handle(
         resources: &P::Resources,
+        state: &P::State,
         from: Identity,
         message: Self,
     ) -> impl Future<Output = Result<Self::Response>>;
@@ -102,26 +136,39 @@ where
 #[cfg(any(feature = "server-http2", feature = "client-http2"))]
 #[cfg_attr(feature = "server-http2", derive(Serialize))]
 #[cfg_attr(feature = "client-http2", derive(Deserialize))]
-struct HttpErrorBody {
+struct HttpErrorBodyBadRequest {
     error: Box<str>,
+}
+
+#[cfg(feature = "server-http2")]
+enum HttpErrorDetail {
+    Unauthorized(UnauthorizedError),
+    BadRequest(Box<str>),
 }
 
 #[cfg(feature = "server-http2")]
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        let (status, message) = match self {
-            Error::BadRequest(msg) => (axum::http::StatusCode::BAD_REQUEST, Some(msg)),
-            Error::Unauthorized => (axum::http::StatusCode::UNAUTHORIZED, None),
+        let (status, error_details) = match self {
+            Error::BadRequest(msg) => (axum::http::StatusCode::BAD_REQUEST, Some(HttpErrorDetail::BadRequest(msg))),
+            Error::Unauthorized(detail) => (axum::http::StatusCode::UNAUTHORIZED, Some(HttpErrorDetail::Unauthorized(detail))),
             Error::Forbidden => (axum::http::StatusCode::FORBIDDEN, None),
             Error::NotFound => (axum::http::StatusCode::NOT_FOUND, None),
-            Error::Internal(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
+            Error::Internal(err) => {
+                tracing::error!("{:?}", err);
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None)
+            },
             Error::InvalidResponse => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::NotImplemented => (axum::http::StatusCode::NOT_IMPLEMENTED, None),
             Error::ServiceUnavailable => (axum::http::StatusCode::SERVICE_UNAVAILABLE, None),
         };
 
-        match message {
-            Some(error) => (status, axum::Json(HttpErrorBody { error })).into_response(),
+        use HttpErrorDetail as D;
+        match error_details {
+            Some(details) => match details {
+                D::BadRequest(error) => (status, axum::Json(HttpErrorBodyBadRequest { error })).into_response(),
+                D::Unauthorized(error) => (status, axum::Json(error)).into_response(), // @todo: improve
+            },
             None => status.into_response(),
         }
     }

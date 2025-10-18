@@ -4,6 +4,7 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // const ID: PreceptID;
     // const ROUTE_PREFIX: &'static str;
     type Resources;
+    type State;
     // #[cfg(feature = "server-http2")]
     // fn build_router(addr: actix::Addr<Self>) -> axum::Router;
     // fn new(resources: Self::Resources) -> Self;

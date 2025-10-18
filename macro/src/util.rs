@@ -19,33 +19,40 @@ pub fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
+pub fn unpack_generic(ty: &syn::Type, expected_types: &[&str], checked_value: &str) -> Box<syn::Type> {
+    let mut current_type = ty;
 
-pub fn unpack_generic(ty: &syn::Type, expected_type: &str, checked_value: &str) -> Box<syn::Type> {
-    let type_path = match ty {
-        syn::Type::Path(type_path)
-            if type_path
-                .path
-                .segments
-                .last()
-                .map(|s| s.ident == expected_type)
-                .unwrap_or(false) =>
-        {
-            type_path
-        }
-        _ => panic!("{} must be {}<T>", checked_value, expected_type),
-    };
-    let syn::PathArguments::AngleBracketed(args) =
-        &type_path.path.segments.last().unwrap().arguments
-    else {
-        panic!(
-            "{} must have angle bracketed type parameters",
-            expected_type
-        );
-    };
-    match args.args.first() {
-        Some(syn::GenericArgument::Type(inner_type)) => inner_type.clone().into(),
-        _ => panic!("{} must have a type parameter", expected_type),
+    for expected_type in expected_types {
+        let type_path = match current_type {
+            syn::Type::Path(type_path)
+                if type_path
+                    .path
+                    .segments
+                    .last()
+                    .map(|s| s.ident == expected_type)
+                    .unwrap_or(false) =>
+                    {
+                        type_path
+                    }
+            _ => panic!("{} must be wrapped in {}", checked_value, expected_types.join("<") + &">".repeat(expected_types.len())),
+        };
+
+        let syn::PathArguments::AngleBracketed(args) =
+            &type_path.path.segments.last().unwrap().arguments
+        else {
+            panic!(
+                "{} must have angle bracketed type parameters",
+                expected_type
+            );
+        };
+
+        current_type = match args.args.first() {
+            Some(syn::GenericArgument::Type(inner_type)) => inner_type,
+            _ => panic!("{} must have a type parameter", expected_type),
+        };
     }
+
+    current_type.clone().into()
 }
 
 #[allow(unused)]
