@@ -15,6 +15,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
     let mut orchestra_fields = proc_macro2::TokenStream::new();
     let mut address_book_fields = proc_macro2::TokenStream::new();
     let mut address_book_converters = proc_macro2::TokenStream::new();
+    let mut comparators = proc_macro2::TokenStream::new();
 
     for p in precepts.iter() {
         let precept = &p.name;
@@ -32,9 +33,13 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         address_book_fields.extend(quote! {
             pub #precept: crate::precepts::#path::Client,
         });
-        address_book_converters.extend(cfg_block);
+        address_book_converters.extend(cfg_block.clone());
         address_book_converters.extend(quote! {
             #precept: self.#precept.to_client(client_id.clone(), token.clone()),
+        });
+        comparators.extend(cfg_block);
+        comparators.extend(quote! {
+            if self.#precept != other.#precept { return false }
         });
     }
 
@@ -59,6 +64,22 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
             token: Option<std::sync::Arc<str>>,
 
             #address_book_fields
+        }
+        
+        impl PartialEq for Orchestra {
+            fn eq(&self, other: &Self) -> bool {
+                #comparators
+                true
+            }
+        }
+        
+        impl PartialEq for AddressBook {
+            fn eq(&self, other: &Self) -> bool {
+                if self.client_id != other.client_id { return false }
+                if self.token != other.token { return false }
+                #comparators
+                true
+            }       
         }
     };
 

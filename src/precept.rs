@@ -59,7 +59,7 @@ pub struct SignedMessage<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct UserIdentity {
     user_id: Uuid,
     // account_id: Uuid,
@@ -67,7 +67,7 @@ pub struct UserIdentity {
     // or role: Role, // derives Copy
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Identity {
     User (UserIdentity),

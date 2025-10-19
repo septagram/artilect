@@ -12,12 +12,6 @@ orchestra_from_precepts! {
     // valid ignored comment
 }
 
-impl PartialEq for Orchestra {
-    fn eq(&self, other: &Self) -> bool {
-        false
-    }
-}
-
 cfg_block! {
     #[cfg(feature = "frontend")] {
         use dioxus::prelude::*;

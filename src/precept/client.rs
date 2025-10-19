@@ -9,7 +9,7 @@ cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub struct AddrLocal<T: actix::Actor> {
             pub addr: Arc<SetOnce<actix::Addr<T>>>,
         }
@@ -25,6 +25,12 @@ cfg_block! {
                     addr: self.addr.clone(),
                     client_id: client_id.expect("Client ID must be set for local precepts"),
                 }
+            }
+        }
+
+        impl<T: actix::Actor> PartialEq for AddrLocal<T> {
+            fn eq(&self, other: &Self) -> bool {
+                self.addr == other.addr
             }
         }
 
@@ -54,6 +60,12 @@ cfg_block! {
                     })
                     .await
                     .map_actix_error()
+            }
+        }
+        
+        impl<T: actix::Actor> PartialEq for ClientLocal<T> {
+            fn eq(&self, other: &Self) -> bool {
+                self.addr == other.addr && self.client_id == other.client_id
             }
         }
 
