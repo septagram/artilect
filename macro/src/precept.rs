@@ -211,10 +211,6 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
             type State = #state_type;
         }
 
-        impl actix::Actor for #struct_name {
-            type Context = actix::Context<Self>;
-        }
-
         impl actix::Supervised for #struct_name {}
         
         impl <M> actix::Handler<SignedMessage<M>> for #struct_name

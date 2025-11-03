@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
-
+use actix::Running;
 use artilect_macro::{precept, precept_message};
 use axum::{Router, extract, routing::post};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use dashmap::DashMap;
 use sqlx::PgPool;
 use time::UtcDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use super::dto::TelegramLoginStartRequest;
@@ -44,36 +44,77 @@ struct LoginAttempt {
     status: LoginAttemptStatus,
 }
 
-pub struct Resources {
+pub struct Config {
     pub address_book: AddressBook,
     pub pool: PgPool,
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
 }
 
-pub struct State {
-    login_attempts_map: DashMap<u128, LoginAttempt>,
-    login_attempts_expiry_queue_in: mpsc::Sender<(UtcDateTime, u128)>,
-    login_attempts_expiry_queue_out: mpsc::Receiver<(UtcDateTime, u128)>,
+pub struct Resources {
+    pub address_book: AddressBook,
+    pub pool: PgPool,
+    pub login_attempts_map: DashMap<u128, LoginAttempt>,
+    pub login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
+    pub login_attempts_timeout: Duration,
 }
 
 #[precept(TelegramLoginStartRequest, TelegramLoginPollRequest)]
 #[custom_router]
 pub struct Precept {
     resources: Arc<Resources>,
-    state: Arc<State>,
+    stop_signal: Option<oneshot::Sender<()>>,
+}
+
+impl actix::Actor for Precept {
+    type Context = actix::Context<Self>;
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        self.stop_signal.take().expect("Stop signal not present on shutdown").send(());
+    }
 }
 
 impl Precept {
-    pub fn new(resources: Arc<Resources>) -> Self {
-        let (tx, rx) = mpsc::channel(resources.max_concurrent_login_attempts);
+    pub fn new(config: Config) -> Self {
+        let Config {
+            address_book,
+            pool,
+            max_concurrent_login_attempts,
+            login_attempts_timeout_min,
+        } = config;
+        let (expire_tx, mut expire_rx) = mpsc::channel(max_concurrent_login_attempts);
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        let resources = Arc::new(Resources {
+            address_book,
+            pool,
+            login_attempts_map: DashMap::new(),
+            login_attempts_expiry_queue: expire_tx,
+            login_attempts_timeout: Duration::from_mins(login_attempts_timeout_min.into()),
+        });
+
+        let res = resources.clone();
+        tokio::spawn(async move {
+            loop {
+                let next_expiry = tokio::select! {
+                    biased;
+                    _ = &mut stop_rx => break,
+                    next_expiry = expire_rx.recv() => next_expiry,
+                };
+                let (expiry, code) = next_expiry.expect("Login attempts expiry queue closed");
+                if expiry > UtcDateTime::now() {
+                    tokio::select! {
+                        biased;
+                        _ = &mut stop_rx => break,
+                        _ = tokio::time::sleep((expiry - UtcDateTime::now()).unsigned_abs()) => {}
+                    }
+                }
+                let _ = res.login_attempts_map.remove(&code);
+            }
+        });
+
         Self {
-            state: Arc::new(State {
-                login_attempts_map: DashMap::new(),
-                login_attempts_expiry_queue_in: tx,
-                login_attempts_expiry_queue_out: rx,
-            }),
             resources,
+            stop_signal: Some(stop_tx),
         }
     }
 }
@@ -95,7 +136,7 @@ impl MessageLocalStrategy<Precept> for TelegramLoginStartRequest {
 
     async fn handle(
         res: &Resources,
-        state: &State,
+        _: &(),
         from: Identity,
         _: Self,
     ) -> precept::Result<TelegramLoginStartResponse> {
@@ -104,20 +145,15 @@ impl MessageLocalStrategy<Precept> for TelegramLoginStartRequest {
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
             {
                 let code = rand::random();
-                state.login_attempts_map.insert(
+                res.login_attempts_map.insert(
                     code,
                     LoginAttempt {
                         provider: AuthProvider::Telegram,
                         status: LoginAttemptStatus::Pending,
                     },
                 );
-                state
-                    .login_attempts_expiry_queue_in
-                    .send((
-                        UtcDateTime::now()
-                            + Duration::from_mins(res.login_attempts_timeout_min.into()),
-                        code,
-                    ))
+                res.login_attempts_expiry_queue
+                    .send((UtcDateTime::now() + res.login_attempts_timeout, code))
                     .await
                     .map_err(|e| precept::Error::Internal(anyhow::anyhow!(e)))?;
                 Ok(TelegramLoginStartResponse {
@@ -147,8 +183,8 @@ impl MessageLocalStrategy<Precept> for LoginPollRequest {
     }
 
     async fn handle(
-        _res: &Resources,
-        state: &State,
+        res: &Resources,
+        _: &(),
         from: Identity,
         message: Self,
     ) -> precept::Result<Self::Response> {
@@ -157,15 +193,14 @@ impl MessageLocalStrategy<Precept> for LoginPollRequest {
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
             {
                 let successful_login_attempt =
-                    state
-                        .login_attempts_map
+                    res.login_attempts_map
                         .remove_if(&message.code, |_, login_attempt| {
                             matches!(login_attempt.status, LoginAttemptStatus::Success { .. })
                         });
                 match successful_login_attempt {
                     Some((_, login_attempt)) => Ok(login_attempt.status),
                     None => {
-                        if state.login_attempts_map.contains_key(&message.code) {
+                        if res.login_attempts_map.contains_key(&message.code) {
                             Ok(LoginAttemptStatus::Pending)
                         } else {
                             Err(precept::Error::NotFound)

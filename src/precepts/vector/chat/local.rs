@@ -91,6 +91,10 @@ impl Precept {
     }
 }
 
+impl actix::Actor for Precept {
+    type Context = actix::Context<Self>;
+}
+
 async fn fetch_thread(res: &Resources, thread_id: Uuid) -> precept::Result<Thread> {
     let thread = sqlx::query_as!(
         Thread,

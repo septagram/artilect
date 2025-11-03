@@ -6,7 +6,10 @@ use artilect::{
     precept::{Identity, PreceptID, Routable, client::AddrLocal},
     precepts::cortex::{
         auth,
-        auth::{Precept as AuthPrecept, Resources as AuthResources, middleware::RouterAuth},
+        auth::{
+            Config as AuthConfig, Precept as AuthPrecept, Resources as AuthResources,
+            middleware::RouterAuth,
+        },
     },
 };
 use http::{HeaderValue, Method};
@@ -37,7 +40,7 @@ async fn main() {
     let router = {
         let (auth, auth_addr) = AddrLocal::new();
         let orchestra = Orchestra { auth };
-        let auth_actor = AuthPrecept::new(Arc::new(AuthResources {
+        let auth_actor = AuthPrecept::new(AuthConfig {
             address_book: orchestra.to_address_book(
                 Some(Identity::Precept {
                     id: PreceptID::Auth,
@@ -49,7 +52,7 @@ async fn main() {
             max_concurrent_login_attempts: 1 << 16,
             // Let's keep the allocated memory in single-digit MB. Also not worth it to make it configurable now.
             login_attempts_timeout_min: 5,
-        }))
+        })
         .start();
         let router = auth_actor.clone().build_router();
         auth_addr.set(auth_actor).unwrap();
