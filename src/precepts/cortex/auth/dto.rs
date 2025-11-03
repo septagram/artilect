@@ -19,24 +19,26 @@ pub struct TelegramLoginStartRequest {}
 
 #[dto(auth, response)]
 pub struct TelegramLoginStartResponse {
-    pub attempt_id: Uuid,
-    pub code: Box<str>,
+    pub code: u128,
+    pub code_str: Box<str>,
 }
 
 #[dto(auth, request)]
-#[message(TelegramLoginPollResponse, TelegramLoginPollMessage)]
-pub struct TelegramLoginPollRequest {
-    pub attempt_id: Uuid,
+#[message(LoginPollResponse, TelegramLoginPollMessage)]
+pub struct LoginPollRequest {
+    pub code: u128,
 }
 
 #[dto(auth, response)]
-pub enum TelegramLoginPollResponse {
+pub enum LoginAttemptStatus {
     Pending,
     Success {
         user: User
         // linked account: Account;
     },
 }
+
+pub type LoginPollResponse = LoginAttemptStatus;
 
 // #[dto(auth, request)]
 // #[message(LinkResponse, LinkMessage)]
@@ -47,7 +49,7 @@ pub enum TelegramLoginPollResponse {
 #[dto(auth, request)]
 #[message(ConfirmLoginResponse, ConfirmLoginMessage)]
 pub struct ConfirmLoginRequest {
-    pub attempt_id: Uuid,
+    pub code: Uuid,
     pub provider: AuthProvider,
     pub external_user_id: Box<str>,
 }

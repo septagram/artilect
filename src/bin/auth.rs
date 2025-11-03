@@ -46,8 +46,8 @@ async fn main() {
                 None,
             ),
             pool,
-            max_concurrent_login_attempts: 1 << 20,
-            // Around a million is fine probs, not worth it to make it configurable now.
+            max_concurrent_login_attempts: 1 << 16,
+            // Let's keep the allocated memory in single-digit MB. Also not worth it to make it configurable now.
             login_attempts_timeout_min: 5,
         }))
         .start();
