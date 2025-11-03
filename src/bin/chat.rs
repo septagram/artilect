@@ -13,6 +13,7 @@ use artilect::{
 use http::{HeaderValue, Method};
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
+use url::Url;
 use uuid::Uuid;
 use artilect::precepts::cortex::auth;
 
@@ -24,27 +25,18 @@ async fn main() {
     // Load configuration
     dotenvy::dotenv().ok();
     artilect::config::validate();
-    let name: Box<str> = std::env::var("NAME")
-        .expect("NAME must be set")
-        .trim()
-        .into();
 
-    if name.is_empty() {
-        panic!("NAME cannot be empty");
-    }
-
-    let database_url = std::env::var("CHAT_DATABASE_URL").expect("DATABASE_URL must be set");
-    let port = match std::env::var("PORT") {
-        Ok(port) => Some(port.parse::<u16>().expect("Invalid PORT")),
-        Err(VarError::NotPresent) => None,
-        Err(err) => panic!("Failed to parse PORT: {}", err),
-    };
+    let chat_base_url = std::env::var("CHAT_BASE_URL").expect("CHAT_BASE_URL must be set");
+    let chat_base_url = Url::parse(chat_base_url.as_str()).expect("CHAT_BASE_URL is invalid");
+    let port = chat_base_url.port();
+    let database_url = std::env::var("CHAT_DATABASE_URL").expect("CHAT_DATABASE_URL must be set");
     let infer_client = artilect::infer::Client::new();
 
     // Create database connection pool
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to database");
+    let name = &**artilect::config::back_shared::NAME;
 
     // Ensure Artilect user exists and get our user data
     let self_user = ensure_artilect_user(&pool, name)

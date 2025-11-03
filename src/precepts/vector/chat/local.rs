@@ -39,7 +39,7 @@ use crate::{
 
 pub const AGENT_PROMPT_TEXT: &str = "You will communicate clearly and supportively, always acting in the best interest of your companions.";
 
-pub async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User, sqlx::Error> {
+pub async fn ensure_artilect_user(pool: &PgPool, name: &str) -> Result<User, sqlx::Error> {
     let artilect_id = Uuid::nil();
 
     let user = sqlx::query_as!(
@@ -52,7 +52,7 @@ pub async fn ensure_artilect_user(pool: &PgPool, name: Box<str>) -> Result<User,
             RETURNING id, name
         "#,
         artilect_id,
-        name.as_str(),
+        name,
     )
     .fetch_one(pool)
     .await?;
@@ -71,10 +71,6 @@ pub struct Resources {
 #[precept(FetchThreadRequest, FetchUserThreadsRequest, SendMessageRequest)]
 pub struct Precept {
     resources: Arc<Resources>,
-}
-
-impl actix::Actor for Precept {
-    type Context = actix::Context<Self>;
 }
 
 impl Precept {

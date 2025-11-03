@@ -14,20 +14,35 @@ pub enum AuthProvider {
 }
 
 #[dto(auth, request)]
-#[message(LoginResponse, LoginMessage)]
-pub struct LoginRequest {}
+#[message(TelegramLoginStartResponse, TelegramLoginStartMessage)]
+pub struct TelegramLoginStartRequest {}
 
 #[dto(auth, response)]
-pub struct LoginResponse {
-    // user: User;
-    // linked account: Account;
+pub struct TelegramLoginStartResponse {
+    pub attempt_id: Uuid,
+    pub code: Box<str>,
 }
 
 #[dto(auth, request)]
-#[message(LinkResponse, LinkMessage)]
-pub struct LinkRequest {}
+#[message(TelegramLoginPollResponse, TelegramLoginPollMessage)]
+pub struct TelegramLoginPollRequest {
+    pub attempt_id: Uuid,
+}
 
-type LinkResponse = LoginResponse;
+#[dto(auth, response)]
+pub enum TelegramLoginPollResponse {
+    Pending,
+    Success {
+        user: User
+        // linked account: Account;
+    },
+}
+
+// #[dto(auth, request)]
+// #[message(LinkResponse, LinkMessage)]
+// pub struct LinkRequest {}
+//
+// type LinkResponse = LoginResponse;
 
 #[dto(auth, request)]
 #[message(ConfirmLoginResponse, ConfirmLoginMessage)]

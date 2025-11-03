@@ -178,7 +178,7 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
                 let state = self.state.clone();
             },
             quote! { &*state },
-            quote! { &#state_type },
+            quote! { #state_type },
         ),
         None => (
             quote! {},
@@ -209,6 +209,10 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         impl crate::precept::Precept for #struct_name {
             type Resources = #resources_type;
             type State = #state_type;
+        }
+
+        impl actix::Actor for #struct_name {
+            type Context = actix::Context<Self>;
         }
 
         impl actix::Supervised for #struct_name {}
