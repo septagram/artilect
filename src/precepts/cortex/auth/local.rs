@@ -102,6 +102,9 @@ impl Precept {
                 };
                 let (expiry, code) = next_expiry.expect("Login attempts expiry queue closed");
                 if expiry > UtcDateTime::now() {
+                    if !res.login_attempts_map.contains_key(&code) {
+                        continue;
+                    };
                     tokio::select! {
                         biased;
                         _ = &mut stop_rx => break,
