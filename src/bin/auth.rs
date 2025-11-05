@@ -1,62 +1,36 @@
+#![feature(more_qualified_paths)]
+
 use std::{env::VarError, net::SocketAddr, sync::Arc};
 
-use actix::Actor;
-use artilect::{
-    orchestra::Orchestra,
-    precept::{Identity, PreceptID, Routable, client::AddrLocal},
-    precepts::cortex::{
-        auth,
-        auth::{
-            Config as AuthConfig, Precept as AuthPrecept, Resources as AuthResources,
-            middleware::RouterAuth,
-        },
-    },
-};
 use http::{HeaderValue, Method};
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use url::Url;
 use uuid::Uuid;
+use artilect_macro::orchestra;
 
 #[actix::main]
 async fn main() {
-    // Initialize logging
     tracing_subscriber::fmt::init();
-
     dotenvy::dotenv().ok();
     artilect::config::validate();
-
     let auth_base_url = std::env::var("AUTH_BASE_URL").expect("AUTH_BASE_URL must be set");
     let auth_base_url = Url::parse(auth_base_url.as_str()).expect("AUTH_BASE_URL is invalid");
     let port = auth_base_url.port();
     let database_url = std::env::var("AUTH_DATABASE_URL").expect("AUTH_DATABASE_URL must be set");
-
-    // Create database connection pool
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to database");
 
     // Create shared state
-    let router = {
-        let (auth, auth_addr) = AddrLocal::new();
-        let orchestra = Orchestra { auth };
-        let auth_actor = AuthPrecept::new(AuthConfig {
-            address_book: orchestra.to_address_book(
-                Some(Identity::Precept {
-                    id: PreceptID::Auth,
-                    on_behalf_of: None,
-                }),
-                None,
-            ),
+    let router = orchestra! {
+        auth: AddrLocal::new() => cortex::auth {
             pool,
             max_concurrent_login_attempts: 1 << 16,
             // Let's keep the allocated memory in single-digit MB. Also not worth it to make it configurable now.
             login_attempts_timeout_min: 5,
-        })
-        .start();
-        let router = auth_actor.clone().build_router();
-        auth_addr.set(auth_actor).unwrap();
-        router
+        },
+        router: auth.build_router() => router
     };
 
     // Configure CORS

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use actix::Actor;
 use artilect::precept::client::{AddrLocal, AddrRemote};
-use artilect_macro::init_orchestra;
+use artilect_macro::orchestra;
 use uuid::Uuid;
 
 #[actix::main]
@@ -13,7 +13,7 @@ async fn main() {
     dotenvy::dotenv().ok();
     artilect::config::validate();
 
-    let _ = init_orchestra! {
+    let _ = orchestra! {
         auth: AddrRemote::new(std::env::var("AUTH_BASE_URL").unwrap().into()),
         telegram: AddrLocal::new() => vector::telegram {
             bot_token: std::env::var("TELEGRAM_BOT_TOKEN").unwrap().into(),

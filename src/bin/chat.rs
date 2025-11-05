@@ -1,71 +1,44 @@
+#![feature(more_qualified_paths)]
+
 use std::{env::VarError, net::SocketAddr, sync::Arc};
 
 use actix::Actor;
-use artilect::{
-    infer::RootChain,
-    orchestra::Orchestra,
-    precept::{Identity, PreceptID, Routable, client::AddrLocal},
-    precepts::{
-        cortex::auth::middleware::RouterAuth,
-        vector::chat::{AGENT_PROMPT_TEXT, Precept as ChatPrecept, ensure_artilect_user},
-    },
-};
+use artilect::infer::RootChain;
 use http::{HeaderValue, Method};
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use url::Url;
 use uuid::Uuid;
-use artilect::precepts::cortex::auth;
+use artilect::precepts::vector::chat::{ensure_artilect_user, AGENT_PROMPT_TEXT};
+use artilect_macro::orchestra;
 
 #[actix::main]
 async fn main() {
-    // Initialize logging
     tracing_subscriber::fmt::init();
-
-    // Load configuration
     dotenvy::dotenv().ok();
     artilect::config::validate();
-
     let chat_base_url = std::env::var("CHAT_BASE_URL").expect("CHAT_BASE_URL must be set");
     let chat_base_url = Url::parse(chat_base_url.as_str()).expect("CHAT_BASE_URL is invalid");
     let port = chat_base_url.port();
     let database_url = std::env::var("CHAT_DATABASE_URL").expect("CHAT_DATABASE_URL must be set");
     let infer_client = artilect::infer::Client::new();
-
-    // Create database connection pool
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to database");
     let name = &**artilect::config::back_shared::NAME;
-
-    // Ensure Artilect user exists and get our user data
     let self_user = ensure_artilect_user(&pool, name)
         .await
         .expect("Failed to ensure Artilect user");
-
     let system_prompt =
         RootChain::from_message(infer_client, artilect::prompts::system(AGENT_PROMPT_TEXT));
 
-    // Create shared state
-    let router = {
-        let (chat, chat_addr) = AddrLocal::new();
-        let orchestra = Orchestra { chat };
-        let chat_actor = ChatPrecept::new(
-            orchestra.to_address_book(
-                Some(Identity::Precept {
-                    id: PreceptID::Chat,
-                    on_behalf_of: None,
-                }),
-                None,
-            ),
+    let router = orchestra! {
+        chat: AddrLocal::new() => vector::chat {
             pool,
             self_user,
             system_prompt,
-        )
-        .start();
-        let router = chat_actor.clone().build_router().require_access_token();
-        chat_addr.set(chat_actor).unwrap();
-        router
+        },
+        router: chat.build_router().require_access_token() => router,
     };
 
     // Configure CORS

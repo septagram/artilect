@@ -100,8 +100,8 @@ impl Parse for PreceptField {
     }
 }
 
-pub fn init_orchestra(input: TokenStream) -> TokenStream {
-    let precepts = parse_macro_input!(input with Punctuated::<PreceptInitField, syn::Token![,]>::parse_terminated);
+pub fn orchestra(input: TokenStream) -> TokenStream {
+    let precepts = parse_macro_input!(input with Punctuated::<OrchestraInitField, syn::Token![,]>::parse_terminated);
     let crate_ident = match std::env::var("CARGO_BIN_NAME") {
         Ok(_) => syn::Ident::new("artilect", proc_macro2::Span::call_site()),
         Err(_) => syn::Ident::new("crate", proc_macro2::Span::call_site()),
@@ -109,23 +109,33 @@ pub fn init_orchestra(input: TokenStream) -> TokenStream {
     let mut address_preconstructors = proc_macro2::TokenStream::new();
     let mut orchestra_fields = proc_macro2::TokenStream::new();
     let mut precept_constructors = proc_macro2::TokenStream::new();
-    for PreceptInitField {
-        ident,
-        construct_addr,
-        construct_precept,
-    } in precepts.into_iter()
+    let mut finalizers = quote! { orchestra };
+    for field in precepts.into_iter()
     {
-        match construct_precept {
-            Some(construct_precept) => {
+        match field {
+            OrchestraInitField::Router { construct_router, return_expr } => {
+                if let Some(return_expr) = return_expr {
+                    finalizers = quote! { #return_expr };
+                }
+                finalizers = quote! {
+                    let router = #construct_router;
+                    #finalizers
+                };
+            }
+            OrchestraInitField::Precept {
+                ident,
+                construct_addr,
+                construct_precept: Some(construct_precept),
+            } => {
                 let precept_path = &construct_precept.precept_path;
                 let construct_config = construct_precept.construct_config(&crate_ident);
-                let set_addr_ident = format_ident!("{}_pending", ident);
-                let actor_ident = format_ident!("{}_actor", ident);
+                let pending_ident = format_ident!("{}_pending", ident);
+                let resolver_ident = format_ident!("{}_resolver", ident);
                 let config_ident = format_ident!("{}_config", ident);
                 let precept_id_ident = format_ident!("{}_precept_id", ident);
                 let precept_identity_ident = format_ident!("{}_precept_identity", ident);
                 address_preconstructors.extend(quote! {
-                    let (#ident, #set_addr_ident) = #construct_addr;
+                    let (#pending_ident, #resolver_ident) = #construct_addr;
                     let #config_ident = #construct_config;
                     let #precept_id_ident = #crate_ident::precepts::#precept_path::Precept::id(&#config_ident);
                     let #precept_identity_ident = #crate_ident::precept::Identity::Precept {
@@ -134,10 +144,10 @@ pub fn init_orchestra(input: TokenStream) -> TokenStream {
                     };
                 });
                 orchestra_fields.extend(quote! {
-                    #ident,
+                    #ident: #pending_ident,
                 });
                 precept_constructors.extend(quote! {
-                    let #actor_ident = #crate_ident::precepts::#precept_path::Precept::new(
+                    let #ident = #crate_ident::precepts::#precept_path::Precept::new(
                         orchestra.to_address_book(
                             Some(#precept_identity_ident),
                             Some(
@@ -150,32 +160,46 @@ pub fn init_orchestra(input: TokenStream) -> TokenStream {
                             ),
                         ),
                         #config_ident,
-                    );
-                    #set_addr_ident.set(#actor_ident.start());
+                    ).start();
+                    #resolver_ident.set(#ident.clone());
                 });
             }
-            None => orchestra_fields.extend(quote! {
+            OrchestraInitField::Precept {
+                ident,
+                construct_addr,
+                construct_precept: None,
+            } => orchestra_fields.extend(quote! {
                 #ident: #construct_addr,
             }),
         }
     }
     quote! {{
-        use #crate_ident::precept::PreceptConstructor;
+        use actix::Actor;
+        use #crate_ident::{
+            precept::{Routable, PreceptConstructor, client::*},
+            precepts::cortex::auth::middleware::RouterAuth,
+        };
         #address_preconstructors
         let orchestra = #crate_ident::orchestra::Orchestra {
             #orchestra_fields
         };
         #precept_constructors
-        orchestra
+        #finalizers
     }}
     .debug(None)
     .into()
 }
 
-struct PreceptInitField {
-    ident: syn::Ident,
-    construct_addr: syn::Expr,
-    construct_precept: Option<PreceptConstructInvocation>,
+enum OrchestraInitField {
+    Precept {
+        ident: syn::Ident,
+        construct_addr: syn::Expr,
+        construct_precept: Option<PreceptConstructInvocation>,
+    },
+    Router {
+        construct_router: syn::Expr,
+        return_expr: Option<syn::Expr>,
+    },
 }
 
 struct PreceptConstructInvocation {
@@ -183,20 +207,30 @@ struct PreceptConstructInvocation {
     construct_config_source: syn::ExprStruct,
 }
 
-impl Parse for PreceptInitField {
+impl Parse for OrchestraInitField {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name = input.parse()?;
+        let name: syn::Ident = input.parse()?;
+        let is_router = name.to_string().as_str() == "router";
         input.parse::<Token![:]>()?;
-        let construct_addr = input.parse()?;
-        let construct_precept = input
-            .parse::<Token![=>]>()
-            .ok()
-            .map(|_| input.parse())
-            .transpose()?;
-        Ok(PreceptInitField {
-            ident: name,
-            construct_addr,
-            construct_precept,
+        let main_expr: syn::Expr = input.parse()?;
+        let has_secondary_initializer = input.parse::<Token![=>]>().is_ok();
+        fn parse_secondary<T: Parse>(do_parse: bool, input: ParseStream) -> syn::Result<Option<T>> {
+            if do_parse {
+                Ok(Some(input.parse()?))
+            } else {
+                Ok(None)
+            }
+        }
+        Ok(match is_router {
+            false => Self::Precept {
+                ident: name,
+                construct_addr: main_expr,
+                construct_precept: parse_secondary(has_secondary_initializer, input)?,
+            },
+            true => Self::Router {
+                construct_router: main_expr,
+                return_expr: parse_secondary(has_secondary_initializer, input)?,
+            },
         })
     }
 }

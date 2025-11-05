@@ -1,4 +1,5 @@
 use std::{sync::Arc, time::Duration};
+
 use actix::Running;
 use artilect_macro::{precept, precept_message};
 use axum::{Router, extract, routing::post};
@@ -20,9 +21,11 @@ use crate::{
     },
     orchestra::AddressBook,
     precept,
-    precept::{ActixResult, Identity, MessageLocalStrategy, PreceptID, Routable, SignedMessage},
+    precept::{
+        ActixResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID, Routable,
+        SignedMessage,
+    },
 };
-use crate::precept::PreceptConstructor;
 
 async fn send_to_self<T>(precept: actix::Addr<Precept>, request: T) -> precept::Result<T::Response>
 where
@@ -70,7 +73,10 @@ impl actix::Actor for Precept {
     type Context = actix::Context<Self>;
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
-        self.stop_signal.take().expect("Stop signal not present on shutdown").send(());
+        self.stop_signal
+            .take()
+            .expect("Stop signal not present on shutdown")
+            .send(());
     }
 }
 
@@ -119,6 +125,10 @@ impl PreceptConstructor for Precept {
             resources,
             stop_signal: Some(stop_tx),
         }
+    }
+
+    fn id(_config: &Self::Config) -> PreceptID {
+        PreceptID::Auth
     }
 }
 

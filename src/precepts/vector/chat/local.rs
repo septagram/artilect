@@ -22,7 +22,8 @@ use crate::{
     infer::{self, PlainText, RootChain},
     orchestra::AddressBook,
     precept::{
-        self, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor, SignedMessage,
+        self, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID,
+        SignedMessage,
     },
 };
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
@@ -96,6 +97,9 @@ impl PreceptConstructor for Precept {
                 system_prompt,
             }),
         }
+    }
+    fn id(_config: &Self::Config) -> PreceptID {
+        PreceptID::Chat
     }
 }
 

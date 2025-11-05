@@ -48,7 +48,7 @@ export_macro!(precept::route_callback);
 export_derive!(Identifiable, dto::derive_identifiable);
 export_attribute!(dto::dto);
 export_macro!(orchestra::orchestra_from_precepts);
-export_macro!(orchestra::init_orchestra);
+export_macro!(orchestra::orchestra);
 
 #[proc_macro_derive(FromLlmReply)]
 pub fn derive_from_llm_reply(input: TokenStream) -> TokenStream {
