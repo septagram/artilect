@@ -22,6 +22,7 @@ use crate::{
     precept,
     precept::{ActixResult, Identity, MessageLocalStrategy, PreceptID, Routable, SignedMessage},
 };
+use crate::precept::PreceptConstructor;
 
 async fn send_to_self<T>(precept: actix::Addr<Precept>, request: T) -> precept::Result<T::Response>
 where
@@ -45,7 +46,6 @@ struct LoginAttempt {
 }
 
 pub struct Config {
-    pub address_book: AddressBook,
     pub pool: PgPool,
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
@@ -74,10 +74,10 @@ impl actix::Actor for Precept {
     }
 }
 
-impl Precept {
-    pub fn new(config: Config) -> Self {
+impl PreceptConstructor for Precept {
+    type Config = Config;
+    fn new(address_book: AddressBook, config: Config) -> Self {
         let Config {
-            address_book,
             pool,
             max_concurrent_login_attempts,
             login_attempts_timeout_min,

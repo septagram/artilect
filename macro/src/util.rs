@@ -71,7 +71,8 @@ impl DebugPrintCode for proc_macro2::TokenStream {
                     Some(label) => format!(" ({})", label),
                     None => String::new(),
                 };
-                println!("Parse error{}: {}", label, e)
+                println!("Parse error{}: {}", label, e);
+                println!("{}", self.clone().to_string());
             }
         }
         self

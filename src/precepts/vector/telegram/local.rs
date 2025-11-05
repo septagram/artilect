@@ -11,7 +11,10 @@ use teloxide::{
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::{orchestra::AddressBook, precept::SignedMessage};
+use crate::{
+    orchestra::AddressBook,
+    precept::{PreceptConstructor, SignedMessage, PreceptID},
+};
 
 #[precept()]
 pub struct Precept {
@@ -20,9 +23,12 @@ pub struct Precept {
     task_handle: Option<JoinHandle<()>>,
 }
 
+pub struct Config {
+    pub bot_token: Box<str>,
+}
+
 pub struct Resources {
     pub address_book: AddressBook,
-    pub bot_token: Box<str>,
 }
 
 #[derive(BotCommands, Clone)]
@@ -34,15 +40,22 @@ enum Command {
     Help,
 }
 
-impl Precept {
-    pub fn new(resources: Resources) -> Self {
+impl PreceptConstructor for Precept {
+    type Config = Config;
+    fn new(address_book: AddressBook, config: Config) -> Self {
         Self {
-            bot: Bot::new(resources.bot_token.as_ref()).parse_mode(ParseMode::MarkdownV2),
-            resources: Arc::new(resources),
+            bot: Bot::new(config.bot_token.as_ref()).parse_mode(ParseMode::MarkdownV2),
+            resources: Arc::new(Resources { address_book }),
             task_handle: None,
         }
     }
 
+    fn id(_config: &Self::Config) -> PreceptID {
+        PreceptID::Telegram
+    }
+}
+
+impl Precept {
     async fn handle_command(
         bot: DefaultParseMode<Bot>,
         msg: Message,

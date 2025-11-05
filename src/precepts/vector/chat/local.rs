@@ -18,12 +18,13 @@ use super::dto::{
     SendMessageResponse, SyncUpdate, Thread,
 };
 use crate::{
+    auth::User,
     infer::{self, PlainText, RootChain},
     orchestra::AddressBook,
-    precept::{self, CoercibleResult, Identity, MessageLocalStrategy, SignedMessage},
-    auth::User,
+    precept::{
+        self, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor, SignedMessage,
+    },
 };
-
 // const AGENT_PROMPT_TEXT: &str = "You are the chat agent. \
 // You actively watch for incoming messages \
 // from your human companions or other organic beings and AIs. \
@@ -61,6 +62,12 @@ pub async fn ensure_artilect_user(pool: &PgPool, name: &str) -> Result<User, sql
     Ok(user)
 }
 
+pub struct Config {
+    pub pool: PgPool,
+    pub self_user: User,
+    pub system_prompt: RootChain,
+}
+
 pub struct Resources {
     pub address_book: AddressBook,
     pub pool: PgPool,
@@ -73,13 +80,14 @@ pub struct Precept {
     resources: Arc<Resources>,
 }
 
-impl Precept {
-    pub fn new(
-        address_book: AddressBook,
-        pool: PgPool,
-        self_user: User,
-        system_prompt: RootChain,
-    ) -> Self {
+impl PreceptConstructor for Precept {
+    type Config = Config;
+    fn new(address_book: AddressBook, config: Config) -> Self {
+        let Config {
+            pool,
+            self_user,
+            system_prompt,
+        } = config;
         Self {
             resources: Arc::new(Resources {
                 address_book,
@@ -395,9 +403,11 @@ async fn respond_to_thread(
 }
 
 fn to_user_id_only(identity: &Identity) -> precept::Result<Uuid> {
-    identity.to_user_id(false).ok_or_else(
-        || precept::Error::Internal(anyhow::anyhow!("Chat API called by another precept (forbidden)."))
-    )
+    identity.to_user_id(false).ok_or_else(|| {
+        precept::Error::Internal(anyhow::anyhow!(
+            "Chat user-facing API called by another precept (forbidden)."
+        ))
+    })
 }
 
 #[precept_message]

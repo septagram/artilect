@@ -1,3 +1,4 @@
+use crate::orchestra::AddressBook;
 use super::{Error, Message, PreceptID, SignedMessage};
 
 pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
@@ -8,6 +9,12 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // #[cfg(feature = "server-http2")]
     // fn build_router(addr: actix::Addr<Self>) -> axum::Router;
     // fn new(resources: Self::Resources) -> Self;
+}
+
+pub trait PreceptConstructor: Precept {
+    type Config;
+    fn new(address_book: AddressBook, config: Self::Config) -> Self;
+    fn id(config: &Self::Config) -> PreceptID;
 }
 
 impl<M> actix::Message for SignedMessage<M>

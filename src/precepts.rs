@@ -14,7 +14,6 @@ pub mod cortex {
         mod remote;
 
         pub use dto::User;
-        pub use local::Config;
 
         #[cfg(feature = "server-http2")]
         pub use extract::*;

@@ -1,21 +1,28 @@
 use std::sync::Arc;
 
-use axum::{Extension, extract::Request, middleware::Next, response::{IntoResponse, Response}, Router};
-use axum::middleware::from_fn;
+use axum::{
+    Router,
+    extract::Request,
+    middleware::{Next, from_fn},
+    response::Response,
+};
 use axum_extra::extract::cookie::CookieJar;
-use jsonwebtoken::{DecodingKey, Validation, decode, Algorithm};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Validation, decode, encode};
 use keyring::Entry;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
-use crate::precept;
-use crate::precept::{Identity, UnauthorizedError};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use time::UtcDateTime;
+
+use crate::{
+    precept,
+    precept::{Identity, UnauthorizedError},
+};
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect-cortex";
 pub const KEYRING_USER_NAME: &str = "artilect"; // To support running multiple artilects, make dynamic.
 pub const JWT_SECRET_NAME: &str = "jwt-secret";
 
-pub static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
+static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
     let entry = Entry::new_with_target(JWT_SECRET_NAME, KEYRING_SERVICE_NAME, KEYRING_USER_NAME)
         .expect("Invalid keyring name for JWT secret");
     match entry.get_secret() {
@@ -37,6 +44,11 @@ pub static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
     }
 });
 
+static JWT_ENCODING_KEY: Lazy<EncodingKey> =
+    Lazy::new(|| EncodingKey::from_secret(JWT_SECRET.as_ref()));
+static JWT_DECODING_KEY: Lazy<DecodingKey> =
+    Lazy::new(|| DecodingKey::from_secret(JWT_SECRET.as_ref()));
+
 static TOKEN_VALIDATION: Lazy<Validation> = Lazy::new(|| Validation::new(Algorithm::HS256));
 
 trait JwtClaims: Clone + DeserializeOwned + Send + Sync {
@@ -50,8 +62,8 @@ trait JwtClaims: Clone + DeserializeOwned + Send + Sync {
 struct JwtClaimsAccess {
     #[serde(flatten)]
     id: Identity,
-    exp: u64,
-    iat: u64,
+    exp: i64,
+    iat: i64,
 }
 
 impl JwtClaims for JwtClaimsAccess {
@@ -65,8 +77,8 @@ impl JwtClaims for JwtClaimsAccess {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JwtClaimsRefresh {
     ses: Arc<str>,
-    exp: u64,
-    iat: u64,
+    exp: i64,
+    iat: i64,
 }
 
 #[derive(Clone)]
@@ -92,21 +104,19 @@ async fn jwt<Claims: JwtClaims>(
             let token = cookie.value();
 
             // Decode and validate JWT
-            let decoding_key = DecodingKey::from_secret(JWT_SECRET.as_ref());
-            let token_data =
-                decode::<Claims>(token, &decoding_key, &TOKEN_VALIDATION).map_err(|e| {
-                    match e.kind() {
-                        jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
-                            UnauthorizedError::ExpiredToken
-                        }
-                        _ => UnauthorizedError::InvalidToken,
+            tracing::info!("JWT_SECRET: {:#?}", JWT_SECRET.as_ref());
+            let token_data = decode::<Claims>(token, &*JWT_DECODING_KEY, &TOKEN_VALIDATION)
+                .map_err(|e| match e.kind() {
+                    jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                        UnauthorizedError::ExpiredToken
                     }
+                    _ => UnauthorizedError::InvalidToken,
                 })?;
 
             // Insert identity into request extensions
             req.extensions_mut().insert(token_data.claims.to_payload());
             Ok(next.run(req).await)
-        },
+        }
         None => Err(UnauthorizedError::Missing.into()),
     }
 }
@@ -126,5 +136,30 @@ where
 
     fn require_refresh_token(self) -> Self {
         self.layer(from_fn(jwt::<JwtClaimsRefresh>))
+    }
+}
+
+pub enum AccessTokenType {
+    User,
+    Precept,
+}
+
+pub fn make_access_token(id: Identity, token_type: AccessTokenType) -> precept::Result<Box<str>> {
+    let now = UtcDateTime::now();
+    let iat = now.unix_timestamp();
+    let exp = match token_type {
+        AccessTokenType::User => {
+            (now + *crate::config::back_shared::JWT_ACCESS_LIFETIME).unix_timestamp()
+        }
+        AccessTokenType::Precept => i64::MAX,
+    };
+    let claims = JwtClaimsAccess { id, iat, exp };
+    match encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &*JWT_ENCODING_KEY,
+    ) {
+        Ok(token) => Ok(token.into()),
+        Err(error) => Err(anyhow::anyhow!(error).into()),
     }
 }

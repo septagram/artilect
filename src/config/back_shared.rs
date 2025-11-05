@@ -1,6 +1,7 @@
 use std::env;
 
 use once_cell::sync::Lazy;
+use time::Duration;
 
 pub static NAME: Lazy<Box<str>> = Lazy::new(|| {
     env::var("NAME")
@@ -20,9 +21,18 @@ pub static PERSONALITY_DESCRIPTION: Lazy<Box<str>> = Lazy::new(|| {
         .into_boxed_str()
 });
 
+pub static JWT_ACCESS_LIFETIME: Lazy<Duration> = Lazy::new(|| {
+    let s = env::var("JWT_ACCESS_LIFETIME").unwrap_or_else(|_| "5m".into());
+    humantime::parse_duration(s.as_str())
+        .expect("Invalid JWT_ACCESS_LIFETIME")
+        .try_into()
+        .expect("JWT_ACCESS_LIFETIME too long")
+});
+
 pub fn validate() {
     // Trigger the lazy statics to force panics early
     let _ = &*NAME;
     let _ = &*ROLE_SHORT_DESCRIPTION;
     let _ = &*PERSONALITY_DESCRIPTION;
+    let _ = &*JWT_ACCESS_LIFETIME;
 }

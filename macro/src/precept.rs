@@ -120,7 +120,7 @@ pub fn precept_mod(args: TokenStream, mut module: syn::ItemMod) -> TokenStream {
     let feature_out = format!("{}-out", precept_name);
     items.push(parse_quote! {
         #[cfg(feature = #feature_in)]
-        pub use local::{Precept, Resources};
+        pub use local::Precept;
     });
     items.push(parse_quote! {
         cfg_block::cfg_block! {

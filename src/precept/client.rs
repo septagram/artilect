@@ -172,12 +172,13 @@ cfg_block! {
         }
 
         impl<P: actix::Actor> Addr<P> {
-            pub fn new_local() -> (AddrLocal<P>, Arc<SetOnce<actix::Addr<P>>>) {
-                AddrLocal::<P>::new()
+            pub fn new_local() -> (Self, Arc<SetOnce<actix::Addr<P>>>) {
+                let (addr, set_addr) = AddrLocal::<P>::new();
+                (Self::Local(addr), set_addr)
             }
 
-            pub fn new_remote(base_url: Arc<str>) -> AddrRemote {
-                AddrRemote::new(base_url)
+            pub fn new_remote(base_url: Arc<str>) -> Self {
+                Self::Remote(AddrRemote::new(base_url))
             }
 
             pub fn to_client(&self, client_id: Option<Identity>, token: Option<Arc<str>>) -> Client<P> {
