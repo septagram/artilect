@@ -19,12 +19,15 @@ use crate::{
 };
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect-cortex";
-pub const KEYRING_USER_NAME: &str = "artilect"; // To support running multiple artilects, make dynamic.
+pub const ARTILECT_INSTANCE_ID: &str = "artilect"; // To support running multiple artilects, make dynamic.
 pub const JWT_SECRET_NAME: &str = "jwt-secret";
 
 static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
-    let entry = Entry::new_with_target(JWT_SECRET_NAME, KEYRING_SERVICE_NAME, KEYRING_USER_NAME)
-        .expect("Invalid keyring name for JWT secret");
+    let entry = Entry::new(
+        format!("{}.{}", ARTILECT_INSTANCE_ID, KEYRING_SERVICE_NAME).as_str(),
+        JWT_SECRET_NAME,
+    )
+    .expect("Invalid keyring name for JWT secret");
     match entry.get_secret() {
         Ok(secret) => Box::from(secret),
         Err(err) => match err {
@@ -34,7 +37,8 @@ static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
                 rand::fill(&mut secret);
 
                 // Store it in keyring
-                entry.set_secret(&secret)
+                entry
+                    .set_secret(&secret)
                     .expect("Failed to store JWT secret in keyring");
 
                 secret.into()
