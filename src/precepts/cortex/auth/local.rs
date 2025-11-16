@@ -192,7 +192,7 @@ async fn handle_telegram_login_start(
 #[precept_message]
 impl MessageLocalStrategy<Precept> for LoginPollRequest {
     fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
-        router.route("/login/poll", post(handle_telegram_login_poll))
+        router.route("/login/poll", post(handle_login_poll))
     }
 
     async fn handle(
@@ -228,11 +228,9 @@ impl MessageLocalStrategy<Precept> for LoginPollRequest {
     }
 }
 
-#[axum::debug_handler]
-async fn handle_telegram_login_poll(
+async fn handle_login_poll(
     mut jar: CookieJar,
     extract::State(precept): extract::State<actix::Addr<Precept>>,
-    extract::Path(attempt_id): extract::Path<Uuid>,
     axum::Json(body): axum::Json<LoginPollRequest>,
 ) -> precept::Result<(CookieJar, axum::Json<LoginPollResponse>)> {
     let res = send_to_self(precept, body).await?;

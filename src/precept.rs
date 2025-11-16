@@ -3,7 +3,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 pub mod client;
 #[cfg(feature = "backend")]
-mod local;
+pub mod local;
 
 #[cfg(feature = "backend")]
 pub use local::*;
@@ -24,7 +24,7 @@ pub enum PreceptID {
 pub enum Error {
     #[error("Bad Request: {0}")]
     BadRequest(Box<str>),
-    #[error("Unauthorized")]
+    #[error("Unauthorized: {0}")]
     Unauthorized(#[from] UnauthorizedError),
     #[error("Forbidden")]
     Forbidden,

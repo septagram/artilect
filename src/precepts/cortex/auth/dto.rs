@@ -55,4 +55,15 @@ pub struct ConfirmLoginRequest {
 }
 
 #[dto(auth, response)]
-pub struct ConfirmLoginResponse {}
+pub struct ConfirmLoginResponse {
+    pub user: User,
+}
+
+#[dto(auth, request)]
+#[message(InvalidateLoginResponse, InvalidateLoginMessage)]
+pub struct InvalidateLoginRequest {
+    pub code: Uuid,
+}
+
+#[dto(auth, response)]
+pub struct InvalidateLoginResponse {}
