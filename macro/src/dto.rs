@@ -22,6 +22,7 @@ pub fn derive_identifiable(input: TokenStream) -> TokenStream {
 #[derive(Debug)]
 struct DtoFlags {
     pub db: bool,
+    pub eq: bool,
     pub ui: bool,
     pub clone: bool,
     pub request: bool,
@@ -32,6 +33,7 @@ impl Default for DtoFlags {
     fn default() -> Self {
         Self {
             db: false,
+            eq: false,
             ui: false,
             clone: false,
             request: false,
@@ -58,6 +60,7 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     for flag in args {
         match flag.to_string().as_str() {
             "db" => flags.db = true,
+            "eq" => flags.eq = true,
             "ui" => flags.ui = true,
             "clone" => flags.clone = true,
             "request" => flags.request = true,
@@ -91,9 +94,13 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         });
     }
 
+    if flags.eq || flags.ui {
+        universal_derives.push(syn::parse_quote!(PartialEq));
+    }
+
     if flags.ui {
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_front, derive(PartialEq, artilect_macro::Identifiable))]
+            #[cfg_attr(feature = #feature_front, derive(artilect_macro::Identifiable))]
         });
     }
 

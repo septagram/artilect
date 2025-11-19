@@ -8,7 +8,7 @@ pub struct User {
     pub name: String,
 }
 
-#[dto(auth, request)]
+#[dto(auth, eq, request)]
 pub enum AuthProvider {
     Telegram,
 }

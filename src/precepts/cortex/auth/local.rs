@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use actix::Running;
-use artilect_macro::{precept, precept_message};
+use artilect_macro::{precept, precept_message, route_callback};
 use axum::{Router, extract, routing::post};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use dashmap::DashMap;
@@ -15,9 +14,10 @@ use crate::{
     auth::{
         User,
         dto::{
-            AuthProvider, LoginAttemptStatus, LoginPollRequest, LoginPollResponse,
-            TelegramLoginStartResponse,
+            AuthProvider, ConfirmLoginRequest, InvalidateLoginRequest, LoginAttemptStatus,
+            LoginPollRequest, LoginPollResponse, TelegramLoginStartResponse,
         },
+        middleware::RouterAuth,
     },
     orchestra::AddressBook,
     precept,
@@ -135,6 +135,9 @@ impl PreceptConstructor for Precept {
 impl Routable for actix::Addr<Precept> {
     fn build_router(self) -> Router {
         let mut router = axum::Router::new();
+        router = ConfirmLoginRequest::route(router);
+        router = InvalidateLoginRequest::route(router);
+        router = router.require_access_token();
         router = TelegramLoginStartRequest::route(router);
         router = LoginPollRequest::route(router);
         router.with_state(self)
@@ -245,4 +248,81 @@ async fn handle_login_poll(
         }
     }
     Ok((jar, axum::Json(res)))
+}
+
+#[precept_message]
+impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
+    fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
+        router.route("/svc/attempt/confirm", post(route_callback!()))
+    }
+
+    async fn handle(
+        res: &Resources,
+        _: &(),
+        from: Identity,
+        message: Self,
+    ) -> precept::Result<Self::Response> {
+        match identity_to_auth_provider(from) {
+            Some(provider) => {
+                let code_u128 = message.code.as_u128();
+                if let Some(mut entry) = res.login_attempts_map.get_mut(&code_u128) {
+                    if entry.provider != provider {
+                        return Err(precept::Error::Forbidden);
+                    };
+                    // @todo: fill in the actual user details
+                    let user = User {
+                        id: Uuid::new_v4(),
+                        name: message.external_user_id.clone().into(),
+                    };
+                    entry.status = LoginAttemptStatus::Success { user: user.clone() };
+                    Ok(crate::auth::dto::ConfirmLoginResponse { user })
+                } else {
+                    Err(precept::Error::NotFound)
+                }
+            }
+            None => Err(precept::Error::Forbidden),
+        }
+    }
+}
+
+#[precept_message]
+impl MessageLocalStrategy<Precept> for InvalidateLoginRequest {
+    fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
+        router.route("/svc/attempt/invalidate", post(route_callback!()))
+    }
+
+    async fn handle(
+        res: &Resources,
+        _: &(),
+        from: Identity,
+        message: Self,
+    ) -> precept::Result<Self::Response> {
+        match identity_to_auth_provider(from) {
+            Some(provider) => {
+                let code_u128 = message.code.as_u128();
+                let had_entry = res
+                    .login_attempts_map
+                    .remove_if(&code_u128, |_, login_attempt| {
+                        matches!(login_attempt.status, LoginAttemptStatus::Success { .. })
+                    })
+                    .is_some();
+                match had_entry {
+                    true => Ok(crate::auth::dto::InvalidateLoginResponse {}),
+                    false => Err(precept::Error::NotFound),
+                }
+            }
+            None => Err(precept::Error::Forbidden),
+        }
+    }
+}
+
+fn identity_to_auth_provider(id: Identity) -> Option<AuthProvider> {
+    match id {
+        Identity::Precept { id: precept_id, .. } => match precept_id {
+            #[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
+            PreceptID::Telegram => Some(AuthProvider::Telegram),
+            _ => None,
+        },
+        _ => None,
+    }
 }
