@@ -177,7 +177,11 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
         use actix::Actor;
         use #crate_ident::{
             precept::{Routable, PreceptConstructor, client::*},
-            precepts::cortex::auth::middleware::RouterAuth,
+            precepts::{
+                cortex::auth::middleware::RouterAuth,
+                cortex,
+                vector,
+            },
         };
         #address_preconstructors
         let orchestra = #crate_ident::orchestra::Orchestra {

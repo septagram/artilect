@@ -1,10 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use artilect_macro::{precept, precept_message, route_callback};
-use axum::{Router, extract, routing::post};
+use axum::{
+    Router, extract,
+    routing::{get, post},
+};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use dashmap::DashMap;
+use indoc::formatdoc;
 use sqlx::PgPool;
 use time::UtcDateTime;
 use tokio::sync::{mpsc, oneshot};
@@ -15,8 +19,9 @@ use crate::{
     auth::{
         User,
         dto::{
-            AuthProvider, ConfirmLoginRequest, InvalidateLoginRequest, LoginAttemptStatus,
-            LoginPollRequest, LoginPollResponse, TelegramLoginStartResponse,
+            AuthFlowFrontend, AuthProvider, AuthProviderInfo, ConfirmLoginRequest,
+            InvalidateLoginRequest, ListAuthProvidersRequest, ListAuthProvidersResponse,
+            LoginAttemptStatus, LoginPollRequest, LoginPollResponse, TelegramLoginStartResponse,
         },
         middleware::RouterAuth,
     },
@@ -27,6 +32,71 @@ use crate::{
         PreceptID, Routable, SignedMessage,
     },
 };
+
+pub struct AuthProviderConfig {
+    pub name: Box<str>,
+    pub icon_url: Option<Box<str>>,
+    pub flow: AuthFlowBackend,
+}
+
+pub enum AuthFlowBackend {
+    // /// Cryptographic private key authentication
+    // PrivateKey,
+    /// Bot-based authentication (e.g., Telegram bot)
+    Bot {
+        precept_id: PreceptID,
+        message_template_md: Box<str>,
+    },
+    // /// Authentication via another Artilect instance
+    // Artilect,
+    // /// Standard OAuth 2.0 flow
+    // OAuth,
+    // /// Traditional email/password authentication
+    // EmailPassword,
+}
+
+impl AuthFlowBackend {
+    fn id(&self) -> Box<str> {
+        match self {
+            Self::Bot { precept_id, .. } => match precept_id {
+                PreceptID::Telegram => "telegram".into(),
+                _ => panic!("Unsupported precept ID for bot auth flow"),
+            },
+        }
+    }
+
+    fn to_auth_provider_info(&self) -> AuthProviderInfo {
+        let id = self.id();
+        match self {
+            AuthFlowBackend::Bot {
+                precept_id,
+                message_template_md,
+            } => match precept_id {
+                PreceptID::Telegram => AuthProviderInfo {
+                    id,
+                    name: "Telegram".into(),
+                    icon_url: Some("/assets/icon-tg.svg".into()),
+                    flow: AuthFlowFrontend::Bot {
+                        message_template_md: message_template_md.clone(),
+                    },
+                },
+                _ => panic!("Unsupported precept ID for bot auth flow"),
+            },
+        }
+    }
+
+    pub fn default_flows(tg_bot_name: String) -> Vec<AuthFlowBackend> {
+        vec![AuthFlowBackend::Bot {
+            precept_id: PreceptID::Telegram,
+            message_template_md: formatdoc! {"
+                Paste the following command into the chat with [@{tg_bot_name}](https://t.me/{tg_bot_name}):
+                ```
+                /login {{code}}
+                ```
+            "}.into(),
+        }]
+    }
+}
 
 async fn send_to_self<T>(precept: actix::Addr<Precept>, request: T) -> precept::Result<T::Response>
 where
@@ -53,6 +123,7 @@ pub struct Config {
     pub pool: PgPool,
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
+    pub auth_providers: Vec<AuthFlowBackend>,
 }
 
 pub struct Resources {
@@ -61,9 +132,15 @@ pub struct Resources {
     pub login_attempts_map: DashMap<u128, LoginAttempt>,
     pub login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
     pub login_attempts_timeout: Duration,
+    pub auth_providers: HashMap<Box<str>, AuthFlowBackend>,
+    pub auth_providers_info: Arc<[AuthProviderInfo]>,
 }
 
-#[precept(TelegramLoginStartRequest, TelegramLoginPollRequest)]
+#[precept(
+    TelegramLoginStartRequest,
+    TelegramLoginPollRequest,
+    ListAuthProvidersRequest
+)]
 #[custom_router]
 pub struct Precept {
     resources: Arc<Resources>,
@@ -88,15 +165,24 @@ impl PreceptConstructor for Precept {
             pool,
             max_concurrent_login_attempts,
             login_attempts_timeout_min,
+            auth_providers: auth_providers_config,
         } = config;
         let (expire_tx, mut expire_rx) = mpsc::channel(max_concurrent_login_attempts);
         let (stop_tx, mut stop_rx) = oneshot::channel();
+        let mut auth_providers_info = Vec::new();
+        let mut auth_providers = HashMap::new();
+        for auth_provider in auth_providers_config {
+            auth_providers_info.push(auth_provider.to_auth_provider_info());
+            auth_providers.insert(auth_provider.id(), auth_provider);
+        }
         let resources = Arc::new(Resources {
             address_book,
             pool,
             login_attempts_map: DashMap::new(),
             login_attempts_expiry_queue: expire_tx,
             login_attempts_timeout: Duration::from_mins(login_attempts_timeout_min.into()),
+            auth_providers,
+            auth_providers_info: auth_providers_info.into(),
         });
 
         let res = resources.clone();
@@ -141,6 +227,7 @@ impl Routable for actix::Addr<Precept> {
         router = router.require_access_token();
         router = TelegramLoginStartRequest::route(router);
         router = LoginPollRequest::route(router);
+        router = ListAuthProvidersRequest::route(router);
         router.with_state(self)
     }
 }
@@ -284,7 +371,7 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
             Some(provider) => {
                 let code_u128 = message.code.as_u128();
                 if let Some(mut entry) = res.login_attempts_map.get_mut(&code_u128) {
-                    if entry.provider != provider {
+                    if entry.provider != provider || message.provider != provider {
                         return Err(precept::Error::Forbidden);
                     };
                     // @todo: fill in the actual user details
@@ -354,4 +441,30 @@ fn identity_to_auth_provider(id: Identity) -> Option<AuthProvider> {
         },
         _ => None,
     }
+}
+
+#[precept_message]
+impl MessageLocalStrategy<Precept> for ListAuthProvidersRequest {
+    fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
+        router.route("/providers", get(handle_list_auth_providers))
+    }
+
+    async fn handle(
+        res: &Resources,
+        _: &(),
+        _from: Identity,
+        _: Self,
+    ) -> precept::Result<ListAuthProvidersResponse> {
+        Ok(ListAuthProvidersResponse {
+            providers: res.auth_providers_info.clone(),
+        })
+    }
+}
+
+async fn handle_list_auth_providers(
+    extract::State(precept): extract::State<actix::Addr<Precept>>,
+) -> precept::Result<axum::Json<ListAuthProvidersResponse>> {
+    send_to_self(precept, ListAuthProvidersRequest {})
+        .await
+        .map(|response| axum::Json(response))
 }

@@ -25,3 +25,9 @@ impl MessageRemoteStrategy for LoginPollRequest {
         Client::new().post(format!("{base_url}/login/poll")).json(&self)
     }
 }
+
+impl MessageRemoteStrategy for ListAuthProvidersRequest {
+    fn into_request(self, base_url: &str) -> RequestBuilder {
+        Client::new().get(format!("{base_url}/providers"))
+    }
+}

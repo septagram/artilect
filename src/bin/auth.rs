@@ -18,6 +18,9 @@ async fn main() {
     let auth_base_url = Url::parse(auth_base_url.as_str()).expect("AUTH_BASE_URL is invalid");
     let port = auth_base_url.port();
     let database_url = std::env::var("AUTH_DATABASE_URL").expect("AUTH_DATABASE_URL must be set");
+    let telegram_bot_name = std::env::var("TELEGRAM_BOT_NAME").expect("TELEGRAM_BOT_NAME must be set");
+    // @todo: when implementing settings precept: telegram bot name must be retrieved from the Telegram precept.
+    // Configuring it separately from the token is a security vulnerability (minor MITM potential)
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to database");
@@ -29,6 +32,7 @@ async fn main() {
             max_concurrent_login_attempts: 1 << 16,
             // Let's keep the allocated memory in single-digit MB. Also not worth it to make it configurable now.
             login_attempts_timeout_min: 5,
+            auth_providers: cortex::auth::AuthFlowBackend::default_flows(telegram_bot_name),
         },
         router: auth.build_router() => router
     };

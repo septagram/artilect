@@ -88,7 +88,6 @@ frontend = [
 ]
 infer = [
     "dep:markup",
-    "dep:indoc",
     "dep:regex",
     "dep:reqwest",
     "dep:tokio",
@@ -111,6 +110,7 @@ mobile = ["dioxus/mobile"]
 [dependencies]
 artilect-macro = { path = "macro" }
 cfg_block = "0.2.0"
+indoc = "2.0"
 ouroboros = { version = "0.18" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
@@ -137,7 +137,6 @@ futures-util = { version = "0.3", optional = true }
 classnames = { version = "2.1", optional = true }
 markup = { version = "0.15", optional = true }
 markdown = { version = "1.0", optional = true }
-indoc = { version = "2.0", optional = true }
 rand = { version = "0.9", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 textwrap = { version = "0.16", features = ["terminal_size"], optional = true }

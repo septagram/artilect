@@ -14,6 +14,8 @@ pub mod cortex {
         mod remote;
 
         pub use dto::User;
+        #[cfg(feature = "auth-in")]
+        pub use local::AuthFlowBackend;
 
         #[cfg(feature = "server-http2")]
         pub use extract::*;

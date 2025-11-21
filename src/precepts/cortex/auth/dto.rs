@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use artilect_macro::dto;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::precept;
 
 #[dto(always, db, ui, clone, request, response)]
 pub struct User {
@@ -34,10 +38,7 @@ pub struct LoginPollRequest {
 #[dto(auth, response)]
 pub enum LoginAttemptStatus {
     Pending,
-    Success {
-        user: User
-        // linked account: Account;
-    },
+    Success { user: User }, // @todo +linked account: Account;
 }
 
 pub type LoginPollResponse = LoginAttemptStatus;
@@ -71,3 +72,31 @@ pub struct InvalidateLoginRequest {
 
 #[dto(auth, response)]
 pub struct InvalidateLoginResponse {}
+
+// Auth provider enumeration
+
+#[dto(auth, response)]
+pub enum AuthFlowFrontend {
+    Bot {
+        message_template_md: Box<str>,
+    },
+    #[serde(other)]
+    Unsupported,
+}
+
+#[dto(auth, response)]
+pub struct AuthProviderInfo {
+    pub id: Box<str>,
+    pub name: Box<str>,
+    pub icon_url: Option<Box<str>>,
+    pub flow: AuthFlowFrontend,
+}
+
+#[dto(auth, request)]
+#[message(ListAuthProvidersResponse, ListAuthProvidersMessage)]
+pub struct ListAuthProvidersRequest {}
+
+#[dto(auth, response)]
+pub struct ListAuthProvidersResponse {
+    pub providers: Arc<[AuthProviderInfo]>,
+}
