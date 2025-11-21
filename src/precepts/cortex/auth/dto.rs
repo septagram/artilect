@@ -54,8 +54,8 @@ pub struct ConfirmLoginRequest {
     pub code: Uuid,
     pub provider: AuthProvider,
     pub provider_user_id: Box<str>,
-    pub provider_username: Box<str>,
-    pub provider_display_name: Box<str>,
+    pub provider_username: Option<Box<str>>,
+    pub provider_display_name: Option<Box<str>>,
 }
 
 #[dto(auth, response)]

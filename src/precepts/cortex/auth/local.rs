@@ -296,8 +296,8 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                         "#,
                         provider as AuthProvider,
                         &message.provider_user_id,
-                        &message.provider_username,
-                        &message.provider_display_name,
+                        message.provider_username.as_deref(),
+                        message.provider_display_name.as_deref(),
                     )
                     .fetch_one(&res.pool)
                     .await

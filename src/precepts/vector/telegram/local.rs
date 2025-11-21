@@ -69,36 +69,36 @@ impl PreceptConstructor for Precept {
 
 async fn run_bot(addr: actix::Addr<Precept>, bot: DefaultParseMode<Bot>) {
     let handler = tg::Update::filter_message()
-            .filter_command::<Command>()
-            .endpoint(
-                move |bot: DefaultParseMode<Bot>, msg: tg::Message, cmd: Command|/* -> impl Future<Output = Result<(), Infallible>> */{
-                    let addr = addr.clone();
-                    let chat_id = msg.chat.id;
-                    async move {
-                        let res = addr.send(SignedMessage {
-                            from: Identity::Precept {
-                                id: PreceptID::Telegram,
-                                on_behalf_of: None,
-                            },
-                            data: CommandReceived {
-                                message: msg,
-                                command: cmd,
-                            },
-                        })
+        .filter_command::<Command>()
+        .endpoint(
+            move |bot: DefaultParseMode<Bot>, msg: tg::Message, cmd: Command| /* -> impl Future<Output = Result<(), Infallible>> */{
+                let addr = addr.clone();
+                let chat_id = msg.chat.id;
+                async move {
+                    let res = addr.send(SignedMessage {
+                        from: Identity::Precept {
+                            id: PreceptID::Telegram,
+                            on_behalf_of: None,
+                        },
+                        data: CommandReceived {
+                            message: msg,
+                            command: cmd,
+                        },
+                    })
                         .await
                         .map_actix_error();
-                        let res_handled = if let Err(err) = res {
-                            bot.send_message(chat_id, escape(err.into_telegram_response().as_str())).await.err()
-                        } else {
-                            None
-                        };
-                        if let Some(err) = res_handled {
-                            tracing::error!("Error sending error reply: {:?}", err);
-                        };
-                        Ok::<(), Infallible>(())
-                    }
-                },
-            );
+                    let res_handled = if let Err(err) = res {
+                        bot.send_message(chat_id, escape(err.into_telegram_response().as_str())).await.err()
+                    } else {
+                        None
+                    };
+                    if let Some(err) = res_handled {
+                        tracing::error!("Error sending error reply: {:?}", err);
+                    };
+                    Ok::<(), Infallible>(())
+                }
+            },
+        );
 
     Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()
@@ -136,17 +136,39 @@ struct CommandReceived {
     command: Command,
 }
 
-enum PrivateChatUserId {
-    Some(u64),
-    NoUserId,
+enum PrivateChatWithUser {
+    Some {
+        id: u64,
+        username: Option<Box<str>>,
+        display_name: Option<Box<str>>,
+    },
+    NoUser,
     NoPrivateChat,
 }
 
-impl From<&tg::Message> for PrivateChatUserId {
-    fn from(msg: &tg::Message) -> Self {
-        match (&msg.from, &msg.chat.kind) {
-            (Some(user), tg::ChatKind::Private(_)) => Self::Some(user.id.0),
-            (None, _) => Self::NoUserId,
+impl From<tg::Message> for PrivateChatWithUser {
+    fn from(msg: tg::Message) -> Self {
+        match (msg.from, &msg.chat.kind) {
+            (Some(user), tg::ChatKind::Private(_)) => {
+                let mut display_name = user.first_name;
+                if let Some(last_name) = user.last_name {
+                    if !display_name.is_empty() {
+                        display_name.push(' ');
+                    }
+                    display_name.push_str(&last_name);
+                }
+                let display_name = if display_name.is_empty() {
+                    None
+                } else {
+                    Some(Box::from(display_name))
+                };
+                Self::Some {
+                    id: user.id.0,
+                    username: user.username.map(|s| s.into()),
+                    display_name,
+                }
+            }
+            (None, _) => Self::NoUser,
             (_, tg::ChatKind::Public(_)) => Self::NoPrivateChat,
         }
     }
@@ -162,14 +184,21 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
         from: Identity,
         Self { message, command }: Self,
     ) -> precept::Result<Self::Response> {
-        println!("Message received: {:#?}", message);
+        let chat_id = message.chat.id;
         match command {
             Command::Login(code) => {
                 let response = match (
-                    PrivateChatUserId::from(&message),
+                    PrivateChatWithUser::from(message),
                     Uuid::parse_str(code.as_str()),
                 ) {
-                    (PrivateChatUserId::Some(user_id), Ok(code)) => {
+                    (
+                        PrivateChatWithUser::Some {
+                            id: user_id,
+                            username,
+                            display_name,
+                        },
+                        Ok(code),
+                    ) => {
                         let user = resources
                             .address_book
                             .auth
@@ -177,6 +206,8 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                                 code,
                                 provider: AuthProvider::Telegram,
                                 provider_user_id: format!("{}", user_id).into(),
+                                provider_username: username,
+                                provider_display_name: display_name,
                             })
                             .await?
                             .user;
@@ -185,10 +216,10 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                             user.name
                         )
                     }
-                    (PrivateChatUserId::NoUserId, _) => {
+                    (PrivateChatWithUser::NoUser, _) => {
                         String::from("I can only login users, I'm afraid.")
                     }
-                    (PrivateChatUserId::NoPrivateChat, Ok(code)) => {
+                    (PrivateChatWithUser::NoPrivateChat, Ok(code)) => {
                         let invalidate_result = resources
                             .address_book
                             .auth
@@ -202,14 +233,14 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                 };
                 resources
                     .bot
-                    .send_message(message.chat.id, escape(response.as_str()))
+                    .send_message(chat_id, escape(response.as_str()))
                     .await
                     .map_err(|e| anyhow!(e))?;
             }
             Command::Help => {
                 resources
                     .bot
-                    .send_message(message.chat.id, Command::descriptions().to_string())
+                    .send_message(chat_id, Command::descriptions().to_string())
                     .await
                     .map_err(|e| anyhow!(e))?;
             }
