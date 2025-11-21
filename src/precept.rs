@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use serde::Deserialize;
 use uuid::Uuid;
 pub mod client;
@@ -8,15 +9,13 @@ pub mod local;
 #[cfg(feature = "backend")]
 pub use local::*;
 use serde::{Serialize, de::DeserializeOwned};
+
 use crate::auth::User;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreceptID {
-    #[cfg(any(feature = "auth-in", feature = "auth-out"))]
     Auth,
-    #[cfg(any(feature = "chat-in", feature = "chat-out"))]
     Chat,
-    #[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
     Telegram,
 }
 
@@ -70,7 +69,7 @@ pub struct UserIdentity {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Identity {
-    User (UserIdentity),
+    User(UserIdentity),
     Precept {
         id: PreceptID,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,7 +89,9 @@ impl Identity {
         match self {
             Self::User(user_identity) => Some(user_identity.user_id),
             Self::Precept { on_behalf_of, .. } => match allow_on_behalf {
-                true => on_behalf_of.as_ref().map(|user_identity| user_identity.user_id),
+                true => on_behalf_of
+                    .as_ref()
+                    .map(|user_identity| user_identity.user_id),
                 false => None,
             },
         }
@@ -150,14 +151,20 @@ enum HttpErrorDetail {
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let (status, error_details) = match self {
-            Error::BadRequest(msg) => (axum::http::StatusCode::BAD_REQUEST, Some(HttpErrorDetail::BadRequest(msg))),
-            Error::Unauthorized(detail) => (axum::http::StatusCode::UNAUTHORIZED, Some(HttpErrorDetail::Unauthorized(detail))),
+            Error::BadRequest(msg) => (
+                axum::http::StatusCode::BAD_REQUEST,
+                Some(HttpErrorDetail::BadRequest(msg)),
+            ),
+            Error::Unauthorized(detail) => (
+                axum::http::StatusCode::UNAUTHORIZED,
+                Some(HttpErrorDetail::Unauthorized(detail)),
+            ),
             Error::Forbidden => (axum::http::StatusCode::FORBIDDEN, None),
             Error::NotFound => (axum::http::StatusCode::NOT_FOUND, None),
             Error::Internal(err) => {
                 tracing::error!("{:?}", err);
                 (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None)
-            },
+            }
             Error::InvalidResponse => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, None),
             Error::NotImplemented => (axum::http::StatusCode::NOT_IMPLEMENTED, None),
             Error::ServiceUnavailable => (axum::http::StatusCode::SERVICE_UNAVAILABLE, None),
@@ -166,7 +173,9 @@ impl axum::response::IntoResponse for Error {
         use HttpErrorDetail as D;
         match error_details {
             Some(details) => match details {
-                D::BadRequest(error) => (status, axum::Json(HttpErrorBodyBadRequest { error })).into_response(),
+                D::BadRequest(error) => {
+                    (status, axum::Json(HttpErrorBodyBadRequest { error })).into_response()
+                }
                 D::Unauthorized(error) => (status, axum::Json(error)).into_response(), // @todo: improve
             },
             None => status.into_response(),

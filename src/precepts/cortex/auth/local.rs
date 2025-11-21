@@ -346,9 +346,9 @@ impl MessageLocalStrategy<Precept> for InvalidateLoginRequest {
 }
 
 fn identity_to_auth_provider(id: Identity) -> Option<AuthProvider> {
+    // @todo: make the list of auth providers configurable
     match id {
         Identity::Precept { id: precept_id, .. } => match precept_id {
-            #[cfg(any(feature = "telegram-in", feature = "telegram-out"))]
             PreceptID::Telegram => Some(AuthProvider::Telegram),
             _ => None,
         },
