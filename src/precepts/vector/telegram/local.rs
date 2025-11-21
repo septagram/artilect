@@ -176,7 +176,7 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                             .send(ConfirmLoginRequest {
                                 code,
                                 provider: AuthProvider::Telegram,
-                                external_user_id: format!("{}", user_id).into(),
+                                provider_user_id: format!("{}", user_id).into(),
                             })
                             .await?
                             .user;

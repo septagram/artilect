@@ -5,10 +5,12 @@ use uuid::Uuid;
 #[dto(always, db, ui, clone, request, response)]
 pub struct User {
     pub id: Uuid,
-    pub name: String,
+    pub name: Box<str>,
 }
 
 #[dto(auth, eq, request)]
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "auth_provider", rename_all = "PascalCase")]
 pub enum AuthProvider {
     Telegram,
 }
@@ -51,7 +53,9 @@ pub type LoginPollResponse = LoginAttemptStatus;
 pub struct ConfirmLoginRequest {
     pub code: Uuid,
     pub provider: AuthProvider,
-    pub external_user_id: Box<str>,
+    pub provider_user_id: Box<str>,
+    pub provider_username: Box<str>,
+    pub provider_display_name: Box<str>,
 }
 
 #[dto(auth, response)]

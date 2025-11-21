@@ -36,7 +36,7 @@ impl From<MessageLogItemRow> for MessageLogItem {
     fn from(row: MessageLogItemRow) -> Self {
         Self {
             user: match (row.user_id, row.user_name) {
-                (Some(id), Some(name)) => Some(User { id, name }),
+                (Some(id), Some(name)) => Some(User { id, name: name.into() }),
                 _ => None,
             },
             content: row.content,

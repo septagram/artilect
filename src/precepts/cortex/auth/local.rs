@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use anyhow::anyhow;
 use artilect_macro::{precept, precept_message, route_callback};
 use axum::{Router, extract, routing::post};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
@@ -22,8 +23,8 @@ use crate::{
     orchestra::AddressBook,
     precept,
     precept::{
-        ActixResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID, Routable,
-        SignedMessage,
+        ActixResult, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor,
+        PreceptID, Routable, SignedMessage,
     },
 };
 
@@ -241,7 +242,7 @@ async fn handle_login_poll(
         LoginPollResponse::Pending => {}
         LoginPollResponse::Success { user } => {
             // @todo: build a JWT here
-            let cookie = Cookie::build(("at", user.name.clone()))
+            let cookie = Cookie::build(("at", String::from(user.name.as_str())))
                 .http_only(true)
                 .secure(true);
             jar = jar.add(cookie);
@@ -262,6 +263,23 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
         from: Identity,
         message: Self,
     ) -> precept::Result<Self::Response> {
+        struct UserRow {
+            id: Option<Uuid>,
+            name: Option<String>,
+        }
+
+        impl UserRow {
+            fn into_user(self) -> precept::Result<User> {
+                match (self.id, self.name) {
+                    (Some(id), Some(name)) => Ok(User {
+                        id,
+                        name: name.into(),
+                    }),
+                    _ => Err(precept::Error::Internal(anyhow!("Invalid user row"))),
+                }
+            }
+        }
+
         match identity_to_auth_provider(from) {
             Some(provider) => {
                 let code_u128 = message.code.as_u128();
@@ -270,10 +288,21 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                         return Err(precept::Error::Forbidden);
                     };
                     // @todo: fill in the actual user details
-                    let user = User {
-                        id: Uuid::new_v4(),
-                        name: message.external_user_id.clone().into(),
-                    };
+                    let user = sqlx::query_as!(
+                        UserRow,
+                        r#"--sql
+                            SELECT *
+                            FROM get_user_from_login($1, $2, $3, $4)
+                        "#,
+                        provider as AuthProvider,
+                        &message.provider_user_id,
+                        &message.provider_username,
+                        &message.provider_display_name,
+                    )
+                    .fetch_one(&res.pool)
+                    .await
+                    .into_precept_result()?
+                    .into_user()?;
                     entry.status = LoginAttemptStatus::Success { user: user.clone() };
                     Ok(crate::auth::dto::ConfirmLoginResponse { user })
                 } else {
@@ -303,7 +332,7 @@ impl MessageLocalStrategy<Precept> for InvalidateLoginRequest {
                 let had_entry = res
                     .login_attempts_map
                     .remove_if(&code_u128, |_, login_attempt| {
-                        matches!(login_attempt.status, LoginAttemptStatus::Success { .. })
+                        login_attempt.provider == provider
                     })
                     .is_some();
                 match had_entry {
