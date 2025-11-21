@@ -291,7 +291,7 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                     let user = sqlx::query_as!(
                         UserRow,
                         r#"--sql
-                            SELECT *
+                            SELECT id, name
                             FROM get_user_from_login($1, $2, $3, $4)
                         "#,
                         provider as AuthProvider,
