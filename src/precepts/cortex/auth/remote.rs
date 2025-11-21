@@ -14,9 +14,10 @@ impl MessageRemoteStrategy for InvalidateLoginRequest {
     }
 }
 
-impl MessageRemoteStrategy for TelegramLoginStartRequest {
+impl MessageRemoteStrategy for BotLoginStartRequest {
     fn into_request(self, base_url: &str) -> RequestBuilder {
-        Client::new().post(format!("{base_url}/login/telegram")).json(&self)
+        let flow_id = self.flow_id.as_str();
+        Client::new().post(format!("{base_url}/login/bot/{flow_id}")).json(&self)
     }
 }
 

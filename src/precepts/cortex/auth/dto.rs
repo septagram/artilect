@@ -20,17 +20,19 @@ pub enum AuthProvider {
 }
 
 #[dto(auth, request)]
-#[message(TelegramLoginStartResponse, TelegramLoginStartMessage)]
-pub struct TelegramLoginStartRequest {}
+#[message(BotLoginStartResponse, BotLoginStartMessage)]
+pub struct BotLoginStartRequest {
+    pub flow_id: Box<str>,
+}
 
 #[dto(auth, response)]
-pub struct TelegramLoginStartResponse {
+pub struct BotLoginStartResponse {
     pub code: u128,
     pub code_str: Box<str>,
 }
 
 #[dto(auth, request)]
-#[message(LoginPollResponse, TelegramLoginPollMessage)]
+#[message(LoginPollResponse, LoginPollMessage)]
 pub struct LoginPollRequest {
     pub code: u128,
 }

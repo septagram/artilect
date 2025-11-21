@@ -14,14 +14,14 @@ use time::UtcDateTime;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use super::dto::TelegramLoginStartRequest;
+use super::dto::BotLoginStartRequest;
 use crate::{
     auth::{
         User,
         dto::{
             AuthFlowFrontend, AuthProvider, AuthProviderInfo, ConfirmLoginRequest,
             InvalidateLoginRequest, ListAuthProvidersRequest, ListAuthProvidersResponse,
-            LoginAttemptStatus, LoginPollRequest, LoginPollResponse, TelegramLoginStartResponse,
+            LoginAttemptStatus, LoginPollRequest, LoginPollResponse, BotLoginStartResponse,
         },
         middleware::RouterAuth,
     },
@@ -91,7 +91,7 @@ impl AuthFlowBackend {
             message_template_md: formatdoc! {"
                 Paste the following command into the chat with [@{tg_bot_name}](https://t.me/{tg_bot_name}):
                 ```
-                /login {{code}}
+                /login {{code_str}}
                 ```
             "}.into(),
         }]
@@ -225,7 +225,7 @@ impl Routable for actix::Addr<Precept> {
         router = ConfirmLoginRequest::route(router);
         router = InvalidateLoginRequest::route(router);
         router = router.require_access_token();
-        router = TelegramLoginStartRequest::route(router);
+        router = BotLoginStartRequest::route(router);
         router = LoginPollRequest::route(router);
         router = ListAuthProvidersRequest::route(router);
         router.with_state(self)
@@ -233,17 +233,18 @@ impl Routable for actix::Addr<Precept> {
 }
 
 #[precept_message]
-impl MessageLocalStrategy<Precept> for TelegramLoginStartRequest {
+impl MessageLocalStrategy<Precept> for BotLoginStartRequest {
     fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
-        router.route("/login/telegram", post(handle_telegram_login_start))
+        router.route("/login/bot/{flow_id}", post(handle_bot_login_start))
     }
 
     async fn handle(
         res: &Resources,
         _: &(),
         from: Identity,
-        _: Self,
-    ) -> precept::Result<TelegramLoginStartResponse> {
+        Self { flow_id }: Self,
+    ) -> precept::Result<BotLoginStartResponse> {
+        let AuthFlowBackend::Bot { precept_id, .. } = res.auth_providers.get(&flow_id).ok_or(precept::Error::NotFound)?;
         match from {
             Identity::Precept { id, on_behalf_of }
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
@@ -260,7 +261,7 @@ impl MessageLocalStrategy<Precept> for TelegramLoginStartRequest {
                     .send((UtcDateTime::now() + res.login_attempts_timeout, code))
                     .await
                     .map_err(|e| precept::Error::Internal(anyhow::anyhow!(e)))?;
-                Ok(TelegramLoginStartResponse {
+                Ok(BotLoginStartResponse {
                     code,
                     code_str: Uuid::from_u128(code).to_string().into(),
                 })
@@ -272,10 +273,11 @@ impl MessageLocalStrategy<Precept> for TelegramLoginStartRequest {
     }
 }
 
-async fn handle_telegram_login_start(
+async fn handle_bot_login_start(
     extract::State(precept): extract::State<actix::Addr<Precept>>,
-) -> precept::Result<axum::Json<TelegramLoginStartResponse>> {
-    send_to_self(precept, TelegramLoginStartRequest {})
+    extract::Path(flow_id): extract::Path<Box<str>>,
+) -> precept::Result<axum::Json<BotLoginStartResponse>> {
+    send_to_self(precept, BotLoginStartRequest { flow_id })
         .await
         .map(|response| axum::Json(response))
 }
