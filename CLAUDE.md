@@ -72,8 +72,11 @@ cd db
 # The script:
 # 1. Loads DATABASE_URL from .env
 # 2. Runs migrations with refinery
-# 3. Exports schema to schema.sql for reference
+# 3. Exports schema to schema.sql for AI reference
+# 4. Exports functions/procedures to functions.sql for AI reference
 ```
+
+Both `schema.sql` and `functions.sql` are auto-generated and gitignored - they provide Claude Code with current database structure and stored procedures for context.
 
 ## Architecture
 
