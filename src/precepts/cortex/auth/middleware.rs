@@ -108,7 +108,6 @@ async fn jwt<Claims: JwtClaims>(
             let token = cookie.value();
 
             // Decode and validate JWT
-            tracing::info!("JWT_SECRET: {:#?}", JWT_SECRET.as_ref());
             let token_data = decode::<Claims>(token, &*JWT_DECODING_KEY, &TOKEN_VALIDATION)
                 .map_err(|e| match e.kind() {
                     jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
