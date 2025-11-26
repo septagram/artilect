@@ -35,7 +35,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         });
         address_book_converters.extend(cfg_block.clone());
         address_book_converters.extend(quote! {
-            #precept: self.#precept.to_client(client_id.clone(), token.clone()),
+            #precept: self.#precept.to_client(client_id.clone(), client.clone()),
         });
         comparators.extend(cfg_block);
         comparators.extend(quote! {
@@ -49,34 +49,25 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         }
 
         impl Orchestra {
-            pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>, token: Option<std::sync::Arc<str>>) -> AddressBook {
+            pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>, client: Option<reqwest::Client>) -> AddressBook {
                 AddressBook {
                     #address_book_converters
 
                     client_id,
-                    token,
+                    client,
                 }
             }
         }
 
         pub struct AddressBook {
             client_id: Option<crate::precept::Identity>,
-            token: Option<std::sync::Arc<str>>,
+            client: Option<reqwest::Client>,
 
             #address_book_fields
         }
 
         impl PartialEq for Orchestra {
             fn eq(&self, other: &Self) -> bool {
-                #comparators
-                true
-            }
-        }
-
-        impl PartialEq for AddressBook {
-            fn eq(&self, other: &Self) -> bool {
-                if self.client_id != other.client_id { return false }
-                if self.token != other.token { return false }
                 #comparators
                 true
             }
@@ -152,15 +143,7 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
                     let #ident = #crate_ident::precepts::#precept_path::Precept::new(
                         orchestra.to_address_book(
                             Some(#precept_identity_ident),
-                            Some(
-                                #crate_ident::auth::middleware::make_access_token(
-                                    #precept_identity_ident,
-                                    #crate_ident::auth::middleware::AccessTokenType::Precept,
-                                )
-                                .expect("Failed to make access token for #ident precept.")
-                                .token
-                                .into(),
-                            ),
+                            http_client.clone(),
                         ),
                         #config_ident,
                     ).start();

@@ -28,9 +28,12 @@ fn main() {
             let orchestra = Arc::new(Orchestra {
                 chat: Addr::new(Arc::from(BASE_URL)),
             });
-            let token = Some(Arc::from(USER_ID.to_string()));
-            tracing::info!("Using token: {:?}", token);
-            use_address_book(orchestra, None, token);
+            // TODO: Create reqwest client with keyring-based cookie provider
+            let client = reqwest::Client::builder()
+                .cookie_store(true)
+                .build()
+                .ok();
+            use_address_book(orchestra, None, client);
             rsx! {
                 App {}
             }

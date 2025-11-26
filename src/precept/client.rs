@@ -20,7 +20,7 @@ cfg_block! {
                 (Self { addr: addr.clone() }, addr)
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, _token: Option<Arc<str>>) -> ClientLocal<T> {
+            pub fn to_client(&self, client_id: Option<Identity>, _client: Option<reqwest::Client>) -> ClientLocal<T> {
                 ClientLocal::<T> {
                     addr: self.addr.clone(),
                     client_id: client_id.expect("Client ID must be set for local precepts"),
@@ -105,14 +105,17 @@ cfg_block! {
                 Self { base_url }
             }
 
-            pub fn to_client(&self, _client_id: Option<Identity>, token: Option<Arc<str>>) -> ClientRemote {
-                ClientRemote { token, base_url: self.base_url.clone() }
+            pub fn to_client(&self, _client_id: Option<Identity>, client: Option<reqwest::Client>) -> ClientRemote {
+                ClientRemote {
+                    client: client.expect("Client must be provided for remote precepts"),
+                    base_url: self.base_url.clone(),
+                }
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub struct ClientRemote {
-            token: Option<Arc<str>>,
+            client: reqwest::Client,
             base_url: Arc<str>,
         }
 
@@ -122,10 +125,7 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                let mut request = msg.into_request(self.base_url.as_ref());
-                if let Some(token) = &self.token {
-                    request = request.header("Authorization", format!("Bearer {}", token));
-                }
+                let request = msg.into_request(&self.client, self.base_url.as_ref());
                 match request.send().await {
                     Ok(response) => {
                         let status = response.status();
@@ -181,15 +181,15 @@ cfg_block! {
                 Self::Remote(AddrRemote::new(base_url))
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, token: Option<Arc<str>>) -> Client<P> {
+            pub fn to_client(&self, client_id: Option<Identity>, client: Option<reqwest::Client>) -> Client<P> {
                 match self {
-                    Self::Local(addr) => Client::Local(addr.to_client(client_id, token)),
-                    Self::Remote(addr) => Client::Remote(addr.to_client(client_id, token)),
+                    Self::Local(addr) => Client::Local(addr.to_client(client_id, client)),
+                    Self::Remote(addr) => Client::Remote(addr.to_client(client_id, client)),
                 }
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub enum Client<P: actix::Actor> {
             Local(ClientLocal<P>),
             Remote(ClientRemote),
