@@ -4,7 +4,8 @@
       "Bash(cargo --version:*)",
       "Bash(rustc:*)",
       "Bash(cargo test --help:*)",
-      "Bash(cargo build --help:*)"
+      "Bash(cargo build --help:*)",
+      "Bash(cargo check:*)"
     ],
     "deny": [],
     "ask": []

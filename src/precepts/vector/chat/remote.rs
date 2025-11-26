@@ -1,4 +1,4 @@
-use reqwest::{Client, RequestBuilder};
+use reqwest::RequestBuilder;
 
 use crate::{
     precept::MessageRemoteStrategy,
@@ -8,19 +8,19 @@ use crate::{
 };
 
 impl MessageRemoteStrategy for FetchUserThreadsRequest {
-    fn into_request(self, base_url: &str) -> RequestBuilder {
-        Client::new().get(format!("{base_url}/chats"))
+    fn into_request(self, client: &reqwest::Client, base_url: &str) -> RequestBuilder {
+        client.get(format!("{base_url}/chats"))
     }
 }
 
 impl MessageRemoteStrategy for FetchThreadRequest {
-    fn into_request(self, base_url: &str) -> RequestBuilder {
-        Client::new().get(format!("{base_url}/chat/{}", self.thread_id))
+    fn into_request(self, client: &reqwest::Client, base_url: &str) -> RequestBuilder {
+        client.get(format!("{base_url}/chat/{}", self.thread_id))
     }
 }
 
 impl MessageRemoteStrategy for SendMessageRequest {
-    fn into_request(self, base_url: &str) -> RequestBuilder {
-        Client::new().post(format!("{base_url}/chat")).json(&self)
+    fn into_request(self, client: &reqwest::Client, base_url: &str) -> RequestBuilder {
+        client.post(format!("{base_url}/chat")).json(&self)
     }
 }

@@ -116,7 +116,7 @@ pub trait MessageLocalStrategy<P: Precept>: Message {
 
 #[cfg(feature = "client-http2")]
 pub trait MessageRemoteStrategy: Message {
-    fn into_request(self, base_url: &str) -> reqwest::RequestBuilder;
+    fn into_request(self, client: &reqwest::Client, base_url: &str) -> reqwest::RequestBuilder;
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
