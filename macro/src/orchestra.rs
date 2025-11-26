@@ -45,11 +45,28 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         pub struct Orchestra {
+            pub base_url: std::sync::Arc<str>,
             #orchestra_fields
         }
 
         impl Orchestra {
-            pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>, client: Option<reqwest::Client>) -> AddressBook {
+            pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>) -> AddressBook {
+                use crate::auth::middleware::http_client::{HttpClient, CookieStorage};
+
+                let client = client_id.as_ref().map(|id| {
+                    let cookie_storage = match id {
+                        crate::precept::Identity::User(_) => {
+                            CookieStorage::User {
+                                base_url: self.base_url.clone(),
+                            }
+                        }
+                        crate::precept::Identity::Precept { id, .. } => {
+                            CookieStorage::Precept { id: id.clone() }
+                        }
+                    };
+                    HttpClient::new(cookie_storage)
+                });
+
                 AddressBook {
                     #address_book_converters
 
@@ -61,7 +78,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
 
         pub struct AddressBook {
             client_id: Option<crate::precept::Identity>,
-            client: Option<reqwest::Client>,
+            client: Option<HttpClient>,
 
             #address_book_fields
         }
@@ -150,18 +167,7 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
                 });
                 precept_constructors.extend(quote! {
                     let #ident = #crate_ident::precepts::#precept_path::Precept::new(
-                        orchestra.to_address_book(
-                            Some(#precept_identity_ident),
-                            Some(
-                                #crate_ident::auth::middleware::make_access_token(
-                                    #precept_identity_ident,
-                                    #crate_ident::auth::middleware::AccessTokenType::Precept,
-                                )
-                                .expect("Failed to make access token for #ident precept.")
-                                .token
-                                .into(),
-                            ),
-                        ),
+                        orchestra.to_address_book(Some(#precept_identity_ident)),
                         #config_ident,
                     ).start();
                     #resolver_ident.set(#ident.clone());
@@ -188,6 +194,7 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
         };
         #address_preconstructors
         let orchestra = #crate_ident::orchestra::Orchestra {
+            base_url: std::sync::Arc::from("http://localhost"),
             #orchestra_fields
         };
         #precept_constructors

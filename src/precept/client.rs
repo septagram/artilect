@@ -8,6 +8,8 @@ use super::{Error, Identity, SignedMessage, UnauthorizedError};
 cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;
+        #[cfg(feature = "client-http2")]
+        use crate::auth::middleware::http_client::HttpClient;
 
         #[derive(Clone)]
         pub struct AddrLocal<T: actix::Actor> {
@@ -20,7 +22,7 @@ cfg_block! {
                 (Self { addr: addr.clone() }, addr)
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, _client: Option<reqwest::Client>) -> ClientLocal<T> {
+            pub fn to_client(&self, client_id: Option<Identity>, _client: Option<HttpClient>) -> ClientLocal<T> {
                 ClientLocal::<T> {
                     addr: self.addr.clone(),
                     client_id: client_id.expect("Client ID must be set for local precepts"),
@@ -94,6 +96,7 @@ cfg_block! {
 
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
+        use crate::auth::middleware::http_client::HttpClient;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
@@ -105,7 +108,7 @@ cfg_block! {
                 Self { base_url }
             }
 
-            pub fn to_client(&self, _client_id: Option<Identity>, client: Option<reqwest::Client>) -> ClientRemote {
+            pub fn to_client(&self, _client_id: Option<Identity>, client: Option<HttpClient>) -> ClientRemote {
                 ClientRemote {
                     client: client.expect("Client must be provided for remote precepts"),
                     base_url: self.base_url.clone(),
@@ -115,7 +118,7 @@ cfg_block! {
 
         #[derive(Clone, PartialEq)]
         pub struct ClientRemote {
-            client: reqwest::Client,
+            client: HttpClient,
             base_url: Arc<str>,
         }
 
@@ -125,7 +128,7 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                let request = msg.into_request(&self.client, self.base_url.as_ref());
+                let request = msg.into_request(self.client.client(), self.base_url.as_ref());
                 match request.send().await {
                     Ok(response) => {
                         let status = response.status();
@@ -181,7 +184,7 @@ cfg_block! {
                 Self::Remote(AddrRemote::new(base_url))
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, client: Option<reqwest::Client>) -> Client<P> {
+            pub fn to_client(&self, client_id: Option<Identity>, client: Option<HttpClient>) -> Client<P> {
                 match self {
                     Self::Local(addr) => Client::Local(addr.to_client(client_id, client)),
                     Self::Remote(addr) => Client::Remote(addr.to_client(client_id, client)),

@@ -26,14 +26,10 @@ fn main() {
         .launch(|| {
             tracing::info!("Starting app");
             let orchestra = Arc::new(Orchestra {
+                base_url: Arc::from(BASE_URL),
                 chat: Addr::new(Arc::from(BASE_URL)),
             });
-            // TODO: Create reqwest client with keyring-based cookie provider
-            let client = reqwest::Client::builder()
-                .cookie_store(true)
-                .build()
-                .ok();
-            use_address_book(orchestra, None, client);
+            use_address_book(orchestra, None);
             rsx! {
                 App {}
             }
