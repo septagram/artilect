@@ -110,10 +110,12 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
     let mut orchestra_fields = proc_macro2::TokenStream::new();
     let mut precept_constructors = proc_macro2::TokenStream::new();
     let mut finalizers = quote! { orchestra };
-    for field in precepts.into_iter()
-    {
+    for field in precepts.into_iter() {
         match field {
-            OrchestraInitField::Router { construct_router, return_expr } => {
+            OrchestraInitField::Router {
+                construct_router,
+                return_expr,
+            } => {
                 if let Some(return_expr) = return_expr {
                     finalizers = quote! { #return_expr };
                 }
@@ -156,6 +158,7 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
                                     #crate_ident::auth::middleware::AccessTokenType::Precept,
                                 )
                                 .expect("Failed to make access token for #ident precept.")
+                                .0
                                 .into(),
                             ),
                         ),

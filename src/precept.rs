@@ -60,7 +60,7 @@ pub struct SignedMessage<T> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct UserIdentity {
-    user_id: Uuid,
+    pub user_id: Uuid,
     // account_id: Uuid,
     // is_operator: bool,
     // or role: Role, // derives Copy

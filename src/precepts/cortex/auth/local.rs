@@ -6,11 +6,14 @@ use axum::{
     Router, extract,
     routing::{get, post},
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
+use axum_extra::extract::{
+    CookieJar,
+    cookie::{Cookie, Expiration},
+};
 use dashmap::DashMap;
 use indoc::formatdoc;
 use sqlx::PgPool;
-use time::UtcDateTime;
+use time::{OffsetDateTime, UtcDateTime, UtcOffset};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -19,17 +22,17 @@ use crate::{
     auth::{
         User,
         dto::{
-            AuthFlowFrontend, AuthProvider, AuthProviderInfo, ConfirmLoginRequest,
-            InvalidateLoginRequest, ListAuthProvidersRequest, ListAuthProvidersResponse,
-            LoginAttemptStatus, LoginPollRequest, LoginPollResponse, BotLoginStartResponse,
+            AuthFlowFrontend, AuthProvider, AuthProviderInfo, BotLoginStartResponse,
+            ConfirmLoginRequest, InvalidateLoginRequest, ListAuthProvidersRequest,
+            ListAuthProvidersResponse, LoginAttemptStatus, LoginPollRequest, LoginPollResponse,
         },
-        middleware::RouterAuth,
+        middleware::{AccessTokenType, RouterAuth, make_access_token},
     },
     orchestra::AddressBook,
     precept,
     precept::{
         ActixResult, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor,
-        PreceptID, Routable, SignedMessage,
+        PreceptID, Routable, SignedMessage, UserIdentity,
     },
 };
 
@@ -244,7 +247,10 @@ impl MessageLocalStrategy<Precept> for BotLoginStartRequest {
         from: Identity,
         Self { flow_id }: Self,
     ) -> precept::Result<BotLoginStartResponse> {
-        let AuthFlowBackend::Bot { precept_id, .. } = res.auth_providers.get(&flow_id).ok_or(precept::Error::NotFound)?;
+        let AuthFlowBackend::Bot { precept_id, .. } = res
+            .auth_providers
+            .get(&flow_id)
+            .ok_or(precept::Error::NotFound)?;
         match from {
             Identity::Precept { id, on_behalf_of }
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
@@ -330,11 +336,27 @@ async fn handle_login_poll(
     match &res {
         LoginPollResponse::Pending => {}
         LoginPollResponse::Success { user } => {
-            // @todo: build a JWT here
-            let cookie = Cookie::build(("at", String::from(user.name.as_str())))
+            let identity = Identity::User(UserIdentity { user_id: user.id });
+            let (token, exp) = make_access_token(identity, AccessTokenType::User)?;
+            let expiration = Expiration::DateTime(
+                UtcDateTime::from_unix_timestamp(exp)
+                    .unwrap()
+                    .to_offset(UtcOffset::UTC),
+            );
+            let access_token_cookie = Cookie::build(("at", String::from(token)))
                 .http_only(true)
+                .expires(expiration)
                 .secure(true);
-            jar = jar.add(cookie);
+            jar = jar.add(access_token_cookie);
+            let access_metadata_cookie = Cookie::build((
+                "at-meta",
+                serde_json::to_string(&identity)
+                    .map_err(|e| precept::Error::Internal(anyhow::anyhow!(e)))?,
+            ))
+            .http_only(false)
+            .expires(expiration)
+            .secure(true);
+            jar = jar.add(access_metadata_cookie);
         }
     }
     Ok((jar, axum::Json(res)))

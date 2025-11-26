@@ -147,7 +147,7 @@ pub enum AccessTokenType {
     Precept,
 }
 
-pub fn make_access_token(id: Identity, token_type: AccessTokenType) -> precept::Result<Box<str>> {
+pub fn make_access_token(id: Identity, token_type: AccessTokenType) -> precept::Result<(Box<str>, i64)> {
     let now = UtcDateTime::now();
     let iat = now.unix_timestamp();
     let exp = match token_type {
@@ -162,7 +162,7 @@ pub fn make_access_token(id: Identity, token_type: AccessTokenType) -> precept::
         &claims,
         &*JWT_ENCODING_KEY,
     ) {
-        Ok(token) => Ok(token.into()),
+        Ok(token) => Ok((token.into(), exp)),
         Err(error) => Err(anyhow::anyhow!(error).into()),
     }
 }
