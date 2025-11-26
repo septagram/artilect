@@ -158,7 +158,7 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
                                     #crate_ident::auth::middleware::AccessTokenType::Precept,
                                 )
                                 .expect("Failed to make access token for #ident precept.")
-                                .0
+                                .token
                                 .into(),
                             ),
                         ),

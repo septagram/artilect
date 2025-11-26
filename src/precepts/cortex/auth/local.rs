@@ -337,13 +337,13 @@ async fn handle_login_poll(
         LoginPollResponse::Pending => {}
         LoginPollResponse::Success { user } => {
             let identity = Identity::User(UserIdentity { user_id: user.id });
-            let (token, exp) = make_access_token(identity, AccessTokenType::User)?;
+            let access_token = make_access_token(identity, AccessTokenType::User)?;
             let expiration = Expiration::DateTime(
-                UtcDateTime::from_unix_timestamp(exp)
+                UtcDateTime::from_unix_timestamp(access_token.exp)
                     .unwrap()
                     .to_offset(UtcOffset::UTC),
             );
-            let access_token_cookie = Cookie::build(("at", String::from(token)))
+            let access_token_cookie = Cookie::build(("at", String::from(access_token.token)))
                 .http_only(true)
                 .expires(expiration)
                 .secure(true);
