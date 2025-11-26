@@ -113,7 +113,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone)]
+        #[derive(Clone, PartialEq)]
         pub struct ClientRemote {
             client: reqwest::Client,
             base_url: Arc<str>,
@@ -189,7 +189,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone)]
+        #[derive(Clone, PartialEq)]
         pub enum Client<P: actix::Actor> {
             Local(ClientLocal<P>),
             Remote(ClientRemote),

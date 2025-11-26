@@ -72,6 +72,15 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
                 true
             }
         }
+
+        impl PartialEq for AddressBook {
+            fn eq(&self, other: &Self) -> bool {
+                if self.client_id != other.client_id { return false }
+                if self.token != other.token { return false }
+                #comparators
+                true
+            }
+        }
     };
 
     expanded.into()
@@ -143,7 +152,15 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
                     let #ident = #crate_ident::precepts::#precept_path::Precept::new(
                         orchestra.to_address_book(
                             Some(#precept_identity_ident),
-                            http_client.clone(),
+                            Some(
+                                #crate_ident::auth::middleware::make_access_token(
+                                    #precept_identity_ident,
+                                    #crate_ident::auth::middleware::AccessTokenType::Precept,
+                                )
+                                .expect("Failed to make access token for #ident precept.")
+                                .token
+                                .into(),
+                            ),
                         ),
                         #config_ident,
                     ).start();

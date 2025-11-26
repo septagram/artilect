@@ -25,12 +25,6 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    // Create HTTP client for remote precept communication
-    let http_client = Some(reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .expect("Failed to create HTTP client"));
-
     // Create shared state
     let router = orchestra! {
         auth: AddrLocal::new() => cortex::auth {

@@ -32,12 +32,6 @@ async fn main() {
     let system_prompt =
         RootChain::from_message(infer_client, artilect::prompts::system(AGENT_PROMPT_TEXT));
 
-    // Create HTTP client for remote precept communication
-    let http_client = Some(reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .expect("Failed to create HTTP client"));
-
     let router = orchestra! {
         chat: AddrLocal::new() => vector::chat {
             pool,

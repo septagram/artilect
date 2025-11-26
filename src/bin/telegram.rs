@@ -13,12 +13,6 @@ async fn main() {
     dotenvy::dotenv().ok();
     artilect::config::validate();
 
-    // Create HTTP client for remote precept communication
-    let http_client = Some(reqwest::Client::builder()
-        .cookie_store(true)
-        .build()
-        .expect("Failed to create HTTP client"));
-
     let _ = orchestra! {
         auth: AddrRemote::new(std::env::var("AUTH_BASE_URL").unwrap().into()),
         telegram: AddrLocal::new() => vector::telegram {
