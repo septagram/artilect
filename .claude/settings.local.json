@@ -5,7 +5,11 @@
       "Bash(rustc:*)",
       "Bash(cargo test --help:*)",
       "Bash(cargo build --help:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [],
     "ask": []
