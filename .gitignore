@@ -15,3 +15,8 @@ Thumbs.db
 # Rust specific
 /target/
 **/*.rs.bk
+
+# Caddy
+caddy.log
+.caddy/
+data/

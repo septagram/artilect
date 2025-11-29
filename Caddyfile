@@ -1,0 +1,53 @@
+# Artilect Dev Proxy
+# Unifies all services under localhost:8080 for cookie sharing
+
+localhost:8080 {
+	# Enable logging for debugging
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+
+	# API routes - strip the service prefix before proxying
+	handle /auth/api* {
+		uri strip_prefix /auth/api
+		reverse_proxy 192.168.31.11:3001 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle /chat/api* {
+		uri strip_prefix /chat/api
+		reverse_proxy 192.168.31.11:3002 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Frontend routes - proxy to local dev servers
+	handle /auth* {
+		reverse_proxy localhost:5001 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle /chat* {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Default response for root
+	handle / {
+		respond "Artilect Dev Proxy - Available services: /auth, /chat" 200
+	}
+
+	# Handle all other routes
+	handle {
+		respond "Not Found" 404
+	}
+}
