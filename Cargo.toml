@@ -94,6 +94,8 @@ infer = [
     "dep:serde_yaml",
     "dep:textwrap",
 ]
+keyring-cookie-store = ["dep:cookie_store"]
+
 auth-in = ["backend"]
 auth-out = ["client-http2"]
 auth-front = ["frontend"]
@@ -104,8 +106,8 @@ telegram-in = ["backend", "dep:teloxide"]
 telegram-out = ["client-http2"]
 
 web = ["dioxus/web"]
-desktop = ["dioxus/desktop", "tao"]
-mobile = ["dioxus/mobile"]
+desktop = ["dioxus/desktop", "dep:tao", "keyring-cookie-store"]
+mobile = ["dioxus/mobile", "keyring-cookie-store"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
@@ -142,6 +144,7 @@ serde_yaml = { version = "0.9", optional = true }
 textwrap = { version = "0.16", features = ["terminal_size"], optional = true }
 regex = { version = "1.11", optional = true }
 reqwest = { version = "0.12", optional = true, features = ["json", "cookies"] }
+cookie_store = { version = "0.22", optional = true }
 dotenvy_macro = { version = "0.15", optional = true }
 tao = { version = "0.30", optional = true }
 axum = { version = "0.8", optional = true, features = ["macros"] }

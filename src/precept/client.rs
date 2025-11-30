@@ -8,8 +8,6 @@ use super::{Error, Identity, SignedMessage, UnauthorizedError};
 cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;
-        #[cfg(feature = "client-http2")]
-        use crate::auth::middleware::http_client::HttpClient;
 
         #[derive(Clone)]
         pub struct AddrLocal<T: actix::Actor> {
@@ -64,7 +62,7 @@ cfg_block! {
                     .map_actix_error()
             }
         }
-        
+
         impl<T: actix::Actor> PartialEq for ClientLocal<T> {
             fn eq(&self, other: &Self) -> bool {
                 self.addr == other.addr && self.client_id == other.client_id
@@ -96,7 +94,8 @@ cfg_block! {
 
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
-        use crate::auth::middleware::http_client::HttpClient;
+        mod http;
+        use http::HttpClient;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
@@ -156,11 +155,6 @@ cfg_block! {
                     Err(error) => {
                         println!("{:?}", error);
                         Err(Error::ServiceUnavailable)
-                        // if error.is_connect() {
-                        //     Err(Error::ServiceUnavailable)
-                        // } else {
-                        //     Err(Error::InvalidResponse)
-                        // }
                     },
                 }
             }
