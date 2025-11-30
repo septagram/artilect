@@ -60,7 +60,6 @@ keywords.workspace = true
 backend = [
     "dep:sqlx",
     "dep:actix",
-    "dep:tokio",
     "dep:dashmap",
     "dep:humantime",
 ]
@@ -90,7 +89,6 @@ infer = [
     "dep:markup",
     "dep:regex",
     "dep:reqwest",
-    "dep:tokio",
     "dep:serde_yaml",
     "dep:textwrap",
 ]
@@ -105,7 +103,6 @@ chat-front = ["frontend"]
 telegram-in = ["backend", "dep:teloxide"]
 telegram-out = ["client-http2"]
 
-web = ["dioxus/web"]
 desktop = ["dioxus/desktop", "dep:tao", "keyring-cookie-store"]
 mobile = ["dioxus/mobile", "keyring-cookie-store"]
 
@@ -114,6 +111,8 @@ artilect-macro = { path = "macro" }
 cfg_block = "0.2.0"
 indoc = "2.0"
 ouroboros = { version = "0.18" }
+tokio = { version = "1.47", features = ["full"] }
+parking_lot = { version = "0.12", features = ["nightly"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 uuid = { version = "1.13", features = ["v4", "serde", "js", "fast-rng"] }
@@ -132,7 +131,6 @@ thiserror = "2.0"
 keyring = { version = "3.6", features = ["linux-native-async-persistent", "windows-native", "apple-native"] }
 url = "2.5"
 
-tokio = { version = "1.47", features = ["full"], optional = true }
 actix = { version = "0.13", optional = true }
 dioxus = { version = "0.6", optional = true }
 futures-util = { version = "0.3", optional = true }

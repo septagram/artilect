@@ -150,6 +150,7 @@ dependencies = [
  "markup",
  "once_cell",
  "ouroboros",
+ "parking_lot",
  "rand 0.9.2",
  "regex",
  "reqwest",
@@ -1471,7 +1472,6 @@ dependencies = [
  "serde",
  "server_fn",
  "tracing",
- "web-sys",
 ]
 
 [[package]]

@@ -9,15 +9,9 @@ get-required-features bin:
 auth-front-desktop:
     dx run --bin=auth-front --release --platform=desktop --features="$(just get-required-features auth-front)"
 
-auth-front-web:
-    dx serve --bin=auth-front --release --platform=web --addr="0.0.0.0" --port=5001 --features="$(just get-required-features auth-front)"
-
 # Chat Frontend
 chat-front-desktop:
     dx run --bin=chat-front --release --platform=desktop --features="$(just get-required-features chat-front)"
-
-chat-front-web:
-    dx serve --bin=chat-front --release --platform=web --addr="0.0.0.0" --port=3000 --features="$(just get-required-features chat-front)"
 
 # Dev Proxy
 proxy:
