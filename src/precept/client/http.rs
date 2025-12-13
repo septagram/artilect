@@ -26,32 +26,32 @@ struct CurrentCookies {
     access_token_exp: Option<CookieExpiration>,
 }
 
-pub enum CookieStore {
+pub enum SecretProvider {
     #[cfg(feature = "backend")]
-    Precept { cookie_header: HeaderValue },
+    PreceptCookie { cookie_header: HeaderValue },
     #[cfg(feature = "client")]
-    User {
+    UserCookiesNative {
         artilect_base_url: Url,
         current_cookies: Mutex<CurrentCookies>,
         warnings_tx: sync::mpsc::Sender<anyhow::Error>,
     },
 }
 
-impl PartialEq for CookieStore {
+impl PartialEq for SecretProvider {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self, other)
     }
 }
 
-impl Eq for CookieStore {}
+impl Eq for SecretProvider {}
 
-impl reqwest::cookie::CookieStore for CookieStore {
+impl reqwest::cookie::CookieStore for SecretProvider {
     fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, url: &Url) {
         match self {
             #[cfg(feature = "backend")]
-            Self::Precept { .. } => {} // Cookies cannot be modified for precepts.
+            Self::PreceptCookie { .. } => {} // Cookies cannot be modified for precepts.
             #[cfg(feature = "client")]
-            Self::User {
+            Self::UserCookiesNative {
                 artilect_base_url,
                 current_cookies,
                 warnings_tx,
@@ -103,9 +103,9 @@ impl reqwest::cookie::CookieStore for CookieStore {
     fn cookies(&self, url: &Url) -> Option<HeaderValue> {
         match self {
             #[cfg(feature = "backend")]
-            Self::Precept { cookie_header } => Some(cookie_header.clone()),
+            Self::PreceptCookie { cookie_header } => Some(cookie_header.clone()),
             #[cfg(feature = "client")]
-            Self::User {
+            Self::UserCookiesNative {
                 artilect_base_url: _,
                 current_cookies,
                 warnings_tx,
@@ -131,7 +131,7 @@ impl reqwest::cookie::CookieStore for CookieStore {
     }
 }
 
-impl CookieStore {
+impl SecretProvider {
     #[cfg(feature = "backend")]
     fn new_precept(id: PreceptID) -> Result<Self, anyhow::Error> {
         let token = make_access_token(Identity::Precept {
@@ -143,7 +143,7 @@ impl CookieStore {
         let mut cookie_header = HeaderValue::try_from(cookie_header_str)
             .context("Failed to construct precept access token cookie header")?;
         cookie_header.set_sensitive(true);
-        Ok(Self::Precept { cookie_header })
+        Ok(Self::PreceptCookie { cookie_header })
     }
     #[cfg(feature = "client")]
     fn new_user(
@@ -154,7 +154,7 @@ impl CookieStore {
             .ok_or_report(&warnings_tx)
             .unwrap_or_default();
         Ok((
-            Self::User {
+            Self::UserCookiesNative {
                 artilect_base_url: Url::parse(&*artilect_base_url)
                     .with_context(|| format!("Invalid URL: {}", artilect_base_url))?,
                 current_cookies: Mutex::new(current_cookies),
@@ -177,11 +177,11 @@ fn get_current_cookies(artilect_base_url: &str) -> anyhow::Result<CurrentCookies
 #[derive(Clone)]
 pub struct HttpClient {
     client: reqwest::Client,
-    cookie_store: Arc<CookieStore>,
+    cookie_store: Arc<SecretProvider>,
 }
 
 impl HttpClient {
-    pub fn new(cookie_store: CookieStore) -> Self {
+    pub fn new(cookie_store: SecretProvider) -> Self {
         let cookie_store = Arc::new(cookie_store);
         let client = reqwest::Client::builder()
             .cookie_provider(cookie_store.clone())
