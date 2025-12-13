@@ -26,7 +26,7 @@ use crate::{
             ConfirmLoginRequest, InvalidateLoginRequest, ListAuthProvidersRequest,
             ListAuthProvidersResponse, LoginAttemptStatus, LoginPollRequest, LoginPollResponse,
         },
-        middleware::{AccessTokenType, RouterAuth, make_access_token},
+        middleware::{RouterAuth, make_access_token},
     },
     orchestra::AddressBook,
     precept,
@@ -337,7 +337,7 @@ async fn handle_login_poll(
         LoginPollResponse::Pending => {}
         LoginPollResponse::Success { user } => {
             let identity = Identity::User(UserIdentity { user_id: user.id });
-            let access_token = make_access_token(identity, AccessTokenType::User)?;
+            let access_token = make_access_token(identity)?;
             let expiration = Expiration::DateTime(
                 UtcDateTime::from_unix_timestamp(access_token.exp)
                     .unwrap()

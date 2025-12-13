@@ -127,7 +127,7 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                let request = msg.into_request(self.client.client(), self.base_url.as_ref());
+                let request = msg.into_request(self.client.client().await, self.base_url.as_ref());
                 match request.send().await {
                     Ok(response) => {
                         let status = response.status();

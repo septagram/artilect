@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::Request,
-    middleware::{from_fn, Next},
-    response::Response,
     Router,
+    extract::Request,
+    middleware::{Next, from_fn},
+    response::Response,
 };
 use axum_extra::extract::cookie::CookieJar;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Validation, decode, encode};
 use keyring::Entry;
 use once_cell::sync::Lazy;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use time::UtcDateTime;
 
 use crate::{
@@ -142,35 +142,28 @@ where
     }
 }
 
-pub enum AccessTokenType {
-    User,
-    Precept,
-}
-
 pub struct GeneratedToken {
     pub token: Box<str>,
     pub exp: i64,
 }
 
-pub fn make_access_token(id: Identity, token_type: AccessTokenType) -> precept::Result<GeneratedToken> {
+pub fn make_access_token(id: Identity) -> jsonwebtoken::errors::Result<GeneratedToken> {
     let now = UtcDateTime::now();
     let iat = now.unix_timestamp();
-    let exp = match token_type {
-        AccessTokenType::User => {
+    let exp = match id {
+        Identity::User(_) => {
             (now + *crate::config::back_shared::JWT_ACCESS_LIFETIME).unix_timestamp()
         }
-        AccessTokenType::Precept => i64::MAX,
+        Identity::Precept { .. } => i64::MAX,
     };
     let claims = JwtClaimsAccess { id, iat, exp };
-    match encode(
+    let token = encode(
         &jsonwebtoken::Header::default(),
         &claims,
         &*JWT_ENCODING_KEY,
-    ) {
-        Ok(token) => Ok(GeneratedToken {
-            token: token.into(),
-            exp,
-        }),
-        Err(error) => Err(anyhow::anyhow!(error).into()),
-    }
+    )?;
+    Ok(GeneratedToken {
+        token: token.into(),
+        exp,
+    })
 }

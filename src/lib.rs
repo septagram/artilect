@@ -4,6 +4,7 @@
     custom_inner_attributes,
     proc_macro_hygiene,
     const_option_ops,
+    try_blocks,
 )]
 
 use uuid::Uuid;
@@ -19,6 +20,7 @@ pub mod infer;
 pub mod orchestra;
 #[cfg(feature = "infer")]
 pub mod prompts;
+mod util;
 
 pub trait Identifiable {
     fn get_id(&self) -> Uuid;
