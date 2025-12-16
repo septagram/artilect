@@ -18,21 +18,10 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: auth_provider; Type: TYPE; Schema: public; Owner: postgres
+-- Name: get_user_from_login(character varying, character varying, character varying, character varying, interval); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE TYPE public.auth_provider AS ENUM (
-    'Telegram'
-);
-
-
-ALTER TYPE public.auth_provider OWNER TO postgres;
-
---
--- Name: get_user_from_login(public.auth_provider, character varying, character varying, character varying, interval); Type: FUNCTION; Schema: public; Owner: postgres
---
-
-CREATE FUNCTION public.get_user_from_login(p_provider public.auth_provider, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) RETURNS TABLE(user_id uuid, user_name character varying, account_id uuid, provider public.auth_provider, provider_username character varying, provider_display_name character varying, session_id uuid, session_expires_at timestamp with time zone)
+CREATE FUNCTION public.get_user_from_login(p_provider character varying, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) RETURNS TABLE(user_id uuid, user_name character varying, account_id uuid, provider character varying, provider_username character varying, provider_display_name character varying, session_id uuid, session_expires_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -42,19 +31,22 @@ DECLARE
     v_session_id uuid;
     v_session_expires_at timestamptz;
 BEGIN
-    -- Try to find existing account
+    -- Try to find existing account (exclude soft-deleted accounts)
     SELECT u.id, u.name, a.id INTO v_user_id, v_user_name, v_account_id
     FROM users u
              INNER JOIN accounts a ON a.user_id = u.id
-    WHERE a.provider = p_provider AND a.provider_user_id = p_provider_user_id;
+    WHERE a.provider = p_provider
+      AND a.provider_user_id = p_provider_user_id
+      AND a.deleted_at IS NULL;
 
     IF FOUND THEN
-        -- Update cached provider info
+        -- Update cached provider info (only if changed)
         UPDATE accounts a
         SET provider_username = p_provider_username,
-            provider_display_name = p_provider_display_name,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE a.provider = p_provider AND a.provider_user_id = p_provider_user_id
+            provider_display_name = p_provider_display_name
+        WHERE a.provider = p_provider
+          AND a.provider_user_id = p_provider_user_id
+          AND a.deleted_at IS NULL
           AND (a.provider_username IS DISTINCT FROM p_provider_username
             OR a.provider_display_name IS DISTINCT FROM p_provider_display_name);
     ELSE
@@ -70,18 +62,18 @@ BEGIN
 
     -- Create new session
     v_session_expires_at := CURRENT_TIMESTAMP + p_session_duration;
-    INSERT INTO sessions (user_id, account_id, expires_at)
-    VALUES (v_user_id, v_account_id, v_session_expires_at)
+    INSERT INTO sessions (account_id, expires_at)
+    VALUES (v_account_id, v_session_expires_at)
     RETURNING sessions.id INTO v_session_id;
 
-    -- Return all data (fixed: v_session_expires_at instead of v_session_expires)
+    -- Return all data
     RETURN QUERY
     SELECT v_user_id, v_user_name, v_account_id, p_provider, p_provider_username, p_provider_display_name, v_session_id, v_session_expires_at;
 END;
 $$;
 
 
-ALTER FUNCTION public.get_user_from_login(p_provider public.auth_provider, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) OWNER TO postgres;
+ALTER FUNCTION public.get_user_from_login(p_provider character varying, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) OWNER TO postgres;
 
 SET default_tablespace = '';
 
@@ -93,13 +85,13 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.accounts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    provider public.auth_provider NOT NULL,
+    provider character varying(50) NOT NULL,
     provider_user_id character varying(255) NOT NULL,
     provider_username character varying(255),
     provider_display_name character varying(255),
     user_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    deleted_at timestamp with time zone
 );
 
 
@@ -141,10 +133,9 @@ ALTER TABLE public.refinery_schema_history OWNER TO postgres;
 
 CREATE TABLE public.sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
     account_id uuid NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    deleted_at timestamp with time zone
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
 
@@ -199,14 +190,6 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts accounts_provider_user_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.accounts
-    ADD CONSTRAINT accounts_provider_user_unique UNIQUE (provider, provider_user_id);
-
-
---
 -- Name: messages messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -255,10 +238,10 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: idx_accounts_provider_user; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_accounts_provider_user_active; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_accounts_provider_user ON public.accounts USING btree (provider, provider_user_id);
+CREATE UNIQUE INDEX idx_accounts_provider_user_active ON public.accounts USING btree (provider, provider_user_id) WHERE (deleted_at IS NULL);
 
 
 --
@@ -273,6 +256,13 @@ CREATE INDEX idx_messages_created_at ON public.messages USING btree (created_at)
 --
 
 CREATE INDEX idx_messages_thread_created ON public.messages USING btree (thread_id, created_at);
+
+
+--
+-- Name: idx_sessions_account_expires; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sessions_account_expires ON public.sessions USING btree (account_id, expires_at DESC);
 
 
 --
@@ -333,14 +323,6 @@ ALTER TABLE ONLY public.messages
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
-
-
---
--- Name: sessions sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
