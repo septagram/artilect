@@ -572,22 +572,14 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                 provider_username: Option<Box<str>>,
                 provider_display_name: Option<Box<str>>,
             ) -> precept::Result<(User, Account, Session)> {
-                match (
-                    self.user_id,
-                    self.user_name,
-                    self.account_id,
-                    self.session_id,
-                    self.session_created_at,
-                    self.session_expires_at,
-                ) {
-                    (
-                        Some(user_id),
-                        Some(user_name),
-                        Some(account_id),
-                        Some(session_id),
-                        Some(session_created_at),
-                        Some(session_expires_at),
-                    ) => Ok((
+                if let Some(user_id) = self.user_id
+                    && let Some(user_name) = self.user_name
+                    && let Some(account_id) = self.account_id
+                    && let Some(session_id) = self.session_id
+                    && let Some(session_created_at) = self.session_created_at
+                    && let Some(session_expires_at) = self.session_expires_at
+                {
+                    Ok((
                         User {
                             id: user_id,
                             name: user_name.into(),
@@ -605,8 +597,9 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                             created_at: session_created_at,
                             expires_at: session_expires_at,
                         },
-                    )),
-                    _ => Err(precept::Error::Internal(anyhow!("Invalid user row"))),
+                    ))
+                } else {
+                    Err(precept::Error::Internal(anyhow!("Invalid user row")))
                 }
             }
         }
@@ -641,7 +634,11 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                         account: account.clone(),
                         session: session.clone(),
                     };
-                    Ok(crate::auth::dto::ConfirmLoginResponse { user, account, session })
+                    Ok(crate::auth::dto::ConfirmLoginResponse {
+                        user,
+                        account,
+                        session,
+                    })
                 } else {
                     Err(precept::Error::NotFound)
                 }
