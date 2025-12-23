@@ -20,3 +20,4 @@ Thumbs.db
 caddy.log
 .caddy/
 data/
+/*.stackdump
