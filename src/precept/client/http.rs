@@ -2,19 +2,19 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use cookie_store::CookieExpiration;
-use http::HeaderValue;
 use itertools::Itertools;
 use keyring::Entry;
 use parking_lot::Mutex;
+use reqwest::header::HeaderValue;
 use serde::{Deserialize, Serialize, Serializer};
+use serde::de::DeserializeOwned;
+use time::{UtcDateTime, UtcOffset};
 use tokio::sync;
 use url::Url;
 
-use crate::{
-    auth::middleware::make_access_token,
-    precept::{Identity, PreceptID},
-    util::report_err::*,
-};
+#[cfg(feature = "backend")]
+use crate::auth::middleware::JwtClaims;
+use crate::{auth::dto::RefreshTokenApiResponse, precept, precept::{Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID}, util::report_err::*};
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect";
@@ -24,12 +24,14 @@ struct CurrentCookies {
     cookies: cookie_store::CookieStore,
     #[serde(serialize_with = "serialize_expiration")]
     access_token_exp: Option<CookieExpiration>,
+    #[serde(serialize_with = "serialize_expiration")]
+    refresh_token_exp: Option<CookieExpiration>,
 }
 
 pub enum SecretProvider {
     #[cfg(feature = "backend")]
     PreceptCookie { cookie_header: HeaderValue },
-    #[cfg(feature = "client")]
+    #[cfg(any(feature = "desktop", feature = "mobile"))]
     UserCookiesNative {
         artilect_base_url: Url,
         current_cookies: Mutex<CurrentCookies>,
@@ -50,7 +52,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
         match self {
             #[cfg(feature = "backend")]
             Self::PreceptCookie { .. } => {} // Cookies cannot be modified for precepts.
-            #[cfg(feature = "client")]
+            #[cfg(any(feature = "desktop", feature = "mobile"))]
             Self::UserCookiesNative {
                 artilect_base_url,
                 current_cookies,
@@ -63,6 +65,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                 let CurrentCookies {
                     ref mut cookies,
                     ref mut access_token_exp,
+                    ref mut refresh_token_exp,
                 } = *lock;
                 let mut has_changes = false;
                 for cookie_header in cookie_headers {
@@ -75,10 +78,17 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                             .into_owned()
                     };
                     if let Some(cookie) = cookie.ok_or_report(warnings_tx) {
-                        if cookie.name() == "at" {
-                            *access_token_exp =
-                                (!cookie.is_expired()).then(|| cookie.expires.clone())
-                        }
+                        match cookie.name() {
+                            "at" => {
+                                *access_token_exp =
+                                    (!cookie.is_expired()).then(|| cookie.expires.clone());
+                            }
+                            "rt" => {
+                                *refresh_token_exp =
+                                    (!cookie.is_expired()).then(|| cookie.expires.clone());
+                            }
+                            _ => {}
+                        };
                         cookies
                             .insert(cookie.clone(), url)
                             .map(|_| ())
@@ -95,6 +105,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                             .and_then(|entry| entry.set_secret(&serialized_cookies))
                             .with_context(save_cookie_err)?
                     };
+                    saved.unwrap_or_report(warnings_tx);
                 }
             }
         }
@@ -104,7 +115,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
         match self {
             #[cfg(feature = "backend")]
             Self::PreceptCookie { cookie_header } => Some(cookie_header.clone()),
-            #[cfg(feature = "client")]
+            #[cfg(any(feature = "desktop", feature = "mobile"))]
             Self::UserCookiesNative {
                 artilect_base_url: _,
                 current_cookies,
@@ -133,20 +144,27 @@ impl reqwest::cookie::CookieStore for SecretProvider {
 
 impl SecretProvider {
     #[cfg(feature = "backend")]
-    fn new_precept(id: PreceptID) -> Result<Self, anyhow::Error> {
-        let token = make_access_token(Identity::Precept {
-            id,
-            on_behalf_of: None,
-        })
+    pub fn new_precept(id: PreceptID) -> Result<Self, anyhow::Error> {
+        use crate::auth::middleware::{JwtClaims, JwtClaimsAccess};
+        let token = JwtClaimsAccess::new(
+            Identity::Precept {
+                id,
+                on_behalf_of: None,
+            },
+            UtcDateTime::MAX.to_offset(UtcOffset::UTC),
+        )
+        .to_token()
         .context("Failed to generate precept access token")?;
+
         let cookie_header_str = cookie::Cookie::new("at", &*token.token).to_string();
         let mut cookie_header = HeaderValue::try_from(cookie_header_str)
             .context("Failed to construct precept access token cookie header")?;
         cookie_header.set_sensitive(true);
         Ok(Self::PreceptCookie { cookie_header })
     }
-    #[cfg(feature = "client")]
-    fn new_user(
+
+    #[cfg(any(feature = "desktop", feature = "mobile"))]
+    pub fn new_user(
         artilect_base_url: Arc<str>,
     ) -> Result<(Self, sync::mpsc::Receiver<anyhow::Error>), anyhow::Error> {
         let (warnings_tx, warnings_rx) = sync::mpsc::channel(32);
@@ -163,6 +181,26 @@ impl SecretProvider {
             warnings_rx,
         ))
     }
+
+    pub fn should_refresh_token(&self) -> bool {
+        match self {
+            #[cfg(feature = "backend")]
+            Self::PreceptCookie { .. } => false,
+            #[cfg(any(feature = "desktop", feature = "mobile"))]
+            Self::UserCookiesNative { current_cookies, .. } => {
+                let lock = current_cookies.lock();
+                let access_expired = match &lock.access_token_exp {
+                    None => true,
+                    Some(exp) => exp.is_expired(),
+                };
+                let refresh_expired = match &lock.refresh_token_exp {
+                    None => true,
+                    Some(exp) => exp.is_expired(),
+                };
+                access_expired && !refresh_expired
+            }
+        }
+    }
 }
 
 fn get_current_cookies(artilect_base_url: &str) -> anyhow::Result<CurrentCookies> {
@@ -177,30 +215,64 @@ fn get_current_cookies(artilect_base_url: &str) -> anyhow::Result<CurrentCookies
 #[derive(Clone)]
 pub struct HttpClient {
     client: reqwest::Client,
-    cookie_store: Arc<SecretProvider>,
+    base_url: Arc<str>,
+    secret_provider: Arc<SecretProvider>,
 }
 
 impl HttpClient {
-    pub fn new(cookie_store: SecretProvider) -> Self {
-        let cookie_store = Arc::new(cookie_store);
+    pub fn new(base_url: Arc<str>, secret_provider: SecretProvider) -> Self {
+        let secret_provider = Arc::new(secret_provider);
         let client = reqwest::Client::builder()
-            .cookie_provider(cookie_store.clone())
+            .cookie_provider(secret_provider.clone())
             .build()
             .unwrap();
         Self {
             client,
-            cookie_store,
+            base_url,
+            secret_provider,
         }
     }
 
-    pub async fn client(&self) -> &reqwest::Client {
-        &self.client
+    pub async fn refresh_token(&self) -> Result<(), super::Error> {
+        match &*self.secret_provider {
+            SecretProvider::PreceptCookie { .. } => Err(super::Error::NotImplemented),
+            SecretProvider::UserCookiesNative {
+                artilect_base_url, ..
+            } => {
+                #[allow(unused_variables)]
+                let RefreshTokenApiResponse {
+                    access_token_exp,
+                    refresh_token_exp,
+                } = self
+                    .client
+                    .post(format!("{}/auth/refresh", artilect_base_url))
+                    .send()
+                    .await
+                    .into_precept_result_t()
+                    .await?;
+                #[cfg(feature = "web")]
+                todo!();
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn send<S>(&self, msg: S) -> precept::Result<S::Response>
+    where
+        S: precept::MessageRemoteStrategy,
+        S::Response: DeserializeOwned,
+    {
+        if self.secret_provider.should_refresh_token() {
+            self.refresh_token().await?;
+        }
+        let request = msg.into_request(&self.client, self.base_url.as_ref());
+        request.send().await.into_precept_result_t::<S::Response>().await
     }
 }
 
 impl PartialEq for HttpClient {
     fn eq(&self, other: &Self) -> bool {
-        self.cookie_store == other.cookie_store
+        self.secret_provider == other.secret_provider
     }
 }
 

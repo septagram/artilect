@@ -3,11 +3,14 @@ use std::sync::Arc;
 use cfg_block::cfg_block;
 use serde::de::DeserializeOwned;
 
-use super::{Error, Identity, SignedMessage, UnauthorizedError};
+use super::{Error, Identity, IntoPreceptSpecificResultTyped, SignedMessage, UnauthorizedError};
 
 cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;
+
+        #[cfg(not(feature = "client-http2"))]
+        type HttpClient = ();
 
         #[derive(Clone)]
         pub struct AddrLocal<T: actix::Actor> {
@@ -127,36 +130,9 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                let request = msg.into_request(self.client.client().await, self.base_url.as_ref());
-                match request.send().await {
-                    Ok(response) => {
-                        let status = response.status();
-                        if status.is_success() {
-                            response.json::<S::Response>().await.map_err(|_| Error::InvalidResponse)
-                        } else {
-                            Err(match status.as_u16() {
-                                400 => match response.json::<HttpErrorBodyBadRequest>().await {
-                                    Ok(body) => Error::BadRequest(body.error),
-                                    Err(_) => Error::InvalidResponse,
-                                },
-                                401 => match response.json::<UnauthorizedError>().await {
-                                    Ok(body) => Error::Unauthorized(body),
-                                    Err(_) => Error::InvalidResponse,
-                                },
-                                403 => Error::Forbidden,
-                                404 => Error::NotFound,
-                                500 => Error::Internal(anyhow::anyhow!("Internal error")),
-                                501 => Error::NotImplemented,
-                                503 => Error::ServiceUnavailable,
-                                _ => Error::InvalidResponse
-                            })
-                        }
-                    },
-                    Err(error) => {
-                        println!("{:?}", error);
-                        Err(Error::ServiceUnavailable)
-                    },
-                }
+                self.client.send(msg).await
+                // let request = msg.into_request(self.client.client().await, self.base_url.as_ref());
+                // request.send().await.into_precept_result_t::<S::Response>().await
             }
         }
     }

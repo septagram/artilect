@@ -21,18 +21,20 @@ SET row_security = off;
 -- Name: get_user_from_login(character varying, character varying, character varying, character varying, interval); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.get_user_from_login(p_provider character varying, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) RETURNS TABLE(user_id uuid, user_name character varying, account_id uuid, provider character varying, provider_username character varying, provider_display_name character varying, session_id uuid, session_expires_at timestamp with time zone)
+CREATE FUNCTION public.get_user_from_login(p_provider character varying, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) RETURNS TABLE(user_id uuid, user_name character varying, account_id uuid, session_id uuid, session_created_at timestamp with time zone, session_expires_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    v_user_id uuid;
-    v_user_name varchar;
-    v_account_id uuid;
-    v_session_id uuid;
+    v_user_id            uuid;
+    v_user_name          varchar;
+    v_account_id         uuid;
+    v_session_id         uuid;
+    v_session_created_at timestamptz;
     v_session_expires_at timestamptz;
 BEGIN
     -- Try to find existing account (exclude soft-deleted accounts)
-    SELECT u.id, u.name, a.id INTO v_user_id, v_user_name, v_account_id
+    SELECT u.id, u.name, a.id
+    INTO v_user_id, v_user_name, v_account_id
     FROM users u
              INNER JOIN accounts a ON a.user_id = u.id
     WHERE a.provider = p_provider
@@ -42,7 +44,7 @@ BEGIN
     IF FOUND THEN
         -- Update cached provider info (only if changed)
         UPDATE accounts a
-        SET provider_username = p_provider_username,
+        SET provider_username     = p_provider_username,
             provider_display_name = p_provider_display_name
         WHERE a.provider = p_provider
           AND a.provider_user_id = p_provider_user_id
@@ -64,16 +66,55 @@ BEGIN
     v_session_expires_at := CURRENT_TIMESTAMP + p_session_duration;
     INSERT INTO sessions (account_id, expires_at)
     VALUES (v_account_id, v_session_expires_at)
-    RETURNING sessions.id INTO v_session_id;
+    RETURNING sessions.id, sessions.created_at INTO v_session_id, v_session_created_at;
 
     -- Return all data
     RETURN QUERY
-    SELECT v_user_id, v_user_name, v_account_id, p_provider, p_provider_username, p_provider_display_name, v_session_id, v_session_expires_at;
+        SELECT v_user_id,
+               v_user_name,
+               v_account_id,
+               v_session_id,
+               v_session_created_at,
+               v_session_expires_at;
 END;
 $$;
 
 
 ALTER FUNCTION public.get_user_from_login(p_provider character varying, p_provider_user_id character varying, p_provider_username character varying, p_provider_display_name character varying, p_session_duration interval) OWNER TO postgres;
+
+--
+-- Name: refresh_session(uuid, interval); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.refresh_session(session_id uuid, duration interval) RETURNS TABLE(user_id uuid, account_id uuid, expires_at timestamp without time zone)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_user_id UUID;
+    v_account_id UUID;
+    v_deleted_at TIMESTAMP;
+    v_expires_at TIMESTAMP;
+BEGIN
+    SELECT a.user_id, a.id, a.deleted_at
+    INTO v_user_id, v_account_id, v_deleted_at
+    FROM sessions s
+             JOIN accounts a ON s.account_id = a.id
+    WHERE s.id = session_id
+      AND s.expires_at > CURRENT_TIMESTAMP;
+
+    IF v_deleted_at IS NULL THEN
+        UPDATE sessions
+        SET expires_at = CURRENT_TIMESTAMP + duration
+        WHERE id = session_id
+        RETURNING expires_at INTO v_expires_at;
+
+        RETURN QUERY SELECT v_user_id, v_account_id, v_expires_at;
+    END IF;
+END;
+$$;
+
+
+ALTER FUNCTION public.refresh_session(session_id uuid, duration interval) OWNER TO postgres;
 
 SET default_tablespace = '';
 

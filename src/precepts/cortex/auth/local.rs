@@ -1,9 +1,10 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
-use anyhow::anyhow;
-use artilect_macro::{precept, precept_message, route_callback};
+use actix::fut::err;
+use anyhow::{Context, anyhow};
+use artilect_macro::{dto, precept, precept_message, route_callback};
 use axum::{
-    Router, extract,
+    Extension, Router, extract,
     routing::{get, post},
 };
 use axum_extra::extract::{
@@ -12,29 +13,57 @@ use axum_extra::extract::{
 };
 use dashmap::DashMap;
 use indoc::formatdoc;
-use sqlx::PgPool;
-use time::{OffsetDateTime, UtcDateTime, UtcOffset};
+use sqlx::{PgPool, postgres::types::PgInterval};
+use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcDateTime, UtcOffset};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use super::dto::BotLoginStartRequest;
 use crate::{
     auth::{
-        User,
+        SessionKey, User,
         dto::{
-            AuthFlowFrontend, AuthProvider, AuthProviderInfo, BotLoginStartResponse,
+            Account, AuthFlowFrontend, AuthProvider, AuthProviderInfo, BotLoginStartResponse,
             ConfirmLoginRequest, InvalidateLoginRequest, ListAuthProvidersRequest,
-            ListAuthProvidersResponse, LoginAttemptStatus, LoginPollRequest, LoginPollResponse,
+            ListAuthProvidersResponse, LoginPollRequest, LoginPollResponse,
+            RefreshTokenApiResponse, RefreshTokenRequest, RefreshTokenResponse, Session,
         },
-        middleware::{RouterAuth, make_access_token},
+        middleware::{JwtClaims, JwtClaimsAccess, JwtClaimsRefresh, MakeExpiration, RouterAuth},
     },
     orchestra::AddressBook,
     precept,
     precept::{
-        ActixResult, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor,
-        PreceptID, Routable, SignedMessage, UserIdentity,
+        ActixResult, Identity, IntoPreceptResult, MessageLocalStrategy, PreceptConstructor,
+        PreceptID, Routable, SignedMessage, UnauthorizedError, UserIdentity,
     },
 };
+
+#[dto(auth, request)]
+#[message(LoginAttemptStatusResponse, LoginAttemptStatusMessage)]
+pub struct LoginAttemptStatusQuery {
+    pub code: u128,
+}
+
+// Internal only
+#[dto(auth, response)]
+pub enum LoginAttemptStatus {
+    Pending,
+    Success {
+        user: User,
+        account: Account,
+        session: Option<Session>,
+    },
+}
+
+pub enum LoginAttemptStatusResponse {
+    Pending,
+    Success {
+        user: User,
+        account: Account,
+        session: Option<Session>,
+        access_token_lifetime: Duration,
+    },
+}
 
 pub struct AuthProviderConfig {
     pub name: Box<str>,
@@ -127,6 +156,8 @@ pub struct Config {
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
     pub auth_providers: Vec<AuthFlowBackend>,
+    pub access_token_lifetime: Duration,
+    pub refresh_token_lifetime: Option<Duration>,
 }
 
 pub struct Resources {
@@ -137,6 +168,8 @@ pub struct Resources {
     pub login_attempts_timeout: Duration,
     pub auth_providers: HashMap<Box<str>, AuthFlowBackend>,
     pub auth_providers_info: Arc<[AuthProviderInfo]>,
+    pub access_token_lifetime: Duration,
+    pub refresh_token_lifetime: Option<Duration>,
 }
 
 #[precept(
@@ -169,6 +202,8 @@ impl PreceptConstructor for Precept {
             max_concurrent_login_attempts,
             login_attempts_timeout_min,
             auth_providers: auth_providers_config,
+            access_token_lifetime,
+            refresh_token_lifetime,
         } = config;
         let (expire_tx, mut expire_rx) = mpsc::channel(max_concurrent_login_attempts);
         let (stop_tx, mut stop_rx) = oneshot::channel();
@@ -183,9 +218,11 @@ impl PreceptConstructor for Precept {
             pool,
             login_attempts_map: DashMap::new(),
             login_attempts_expiry_queue: expire_tx,
-            login_attempts_timeout: Duration::from_mins(login_attempts_timeout_min.into()),
+            login_attempts_timeout: Duration::minutes(login_attempts_timeout_min.into()),
             auth_providers,
             auth_providers_info: auth_providers_info.into(),
+            access_token_lifetime,
+            refresh_token_lifetime,
         });
 
         let res = resources.clone();
@@ -224,14 +261,21 @@ impl PreceptConstructor for Precept {
 
 impl Routable for actix::Addr<Precept> {
     fn build_router(self) -> Router {
-        let mut router = axum::Router::new();
-        router = ConfirmLoginRequest::route(router);
-        router = InvalidateLoginRequest::route(router);
-        router = router.require_access_token();
-        router = BotLoginStartRequest::route(router);
-        router = LoginPollRequest::route(router);
-        router = ListAuthProvidersRequest::route(router);
-        router.with_state(self)
+        let mut service_routes = Router::new();
+        service_routes = ConfirmLoginRequest::route(service_routes);
+        service_routes = InvalidateLoginRequest::route(service_routes);
+        service_routes = service_routes.require_access_token();
+        let mut refresh_routes = Router::new();
+        refresh_routes = RefreshTokenRequest::route(refresh_routes);
+        refresh_routes = refresh_routes.require_refresh_token();
+        let mut entry_routes = Router::new();
+        entry_routes = BotLoginStartRequest::route(entry_routes);
+        entry_routes = ListAuthProvidersRequest::route(entry_routes);
+        entry_routes = entry_routes.route("/login/poll", post(handle_login_poll));
+        entry_routes
+            .merge(refresh_routes)
+            .merge(service_routes)
+            .with_state(self)
     }
 }
 
@@ -289,9 +333,9 @@ async fn handle_bot_login_start(
 }
 
 #[precept_message]
-impl MessageLocalStrategy<Precept> for LoginPollRequest {
+impl MessageLocalStrategy<Precept> for LoginAttemptStatusQuery {
     fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
-        router.route("/login/poll", post(handle_login_poll))
+        unreachable!("Login attempt status request is handled by the login poll endpoint")
     }
 
     async fn handle(
@@ -310,10 +354,22 @@ impl MessageLocalStrategy<Precept> for LoginPollRequest {
                             matches!(login_attempt.status, LoginAttemptStatus::Success { .. })
                         });
                 match successful_login_attempt {
-                    Some((_, login_attempt)) => Ok(login_attempt.status),
+                    Some((_, login_attempt)) => Ok(match login_attempt.status {
+                        LoginAttemptStatus::Pending => LoginAttemptStatusResponse::Pending,
+                        LoginAttemptStatus::Success {
+                            user,
+                            account,
+                            session,
+                        } => LoginAttemptStatusResponse::Success {
+                            user,
+                            account,
+                            session,
+                            access_token_lifetime: res.access_token_lifetime,
+                        },
+                    }),
                     None => {
                         if res.login_attempts_map.contains_key(&message.code) {
-                            Ok(LoginAttemptStatus::Pending)
+                            Ok(LoginAttemptStatusResponse::Pending)
                         } else {
                             Err(precept::Error::NotFound)
                         }
@@ -321,45 +377,171 @@ impl MessageLocalStrategy<Precept> for LoginPollRequest {
                 }
             }
             _ => Err(precept::Error::Internal(anyhow::anyhow!(
-                "Login start can only be called via REST API"
+                "Login poll can only be called via REST API"
             ))),
         }
     }
 }
 
 async fn handle_login_poll(
-    mut jar: CookieJar,
     extract::State(precept): extract::State<actix::Addr<Precept>>,
-    axum::Json(body): axum::Json<LoginPollRequest>,
+    axum::Json(body): axum::Json<LoginAttemptStatusQuery>,
 ) -> precept::Result<(CookieJar, axum::Json<LoginPollResponse>)> {
-    let res = send_to_self(precept, body).await?;
-    match &res {
-        LoginPollResponse::Pending => {}
-        LoginPollResponse::Success { user } => {
-            let identity = Identity::User(UserIdentity { user_id: user.id });
-            let access_token = make_access_token(identity)?;
-            let expiration = Expiration::DateTime(
-                UtcDateTime::from_unix_timestamp(access_token.exp)
-                    .unwrap()
-                    .to_offset(UtcOffset::UTC),
-            );
-            let access_token_cookie = Cookie::build(("at", String::from(access_token.token)))
-                .http_only(true)
-                .expires(expiration)
-                .secure(true);
-            jar = jar.add(access_token_cookie);
-            let access_metadata_cookie = Cookie::build((
-                "at-meta",
-                serde_json::to_string(&identity)
-                    .map_err(|e| precept::Error::Internal(anyhow::anyhow!(e)))?,
-            ))
-            .http_only(false)
-            .expires(expiration)
-            .secure(true);
-            jar = jar.add(access_metadata_cookie);
+    let mut jar = CookieJar::new();
+    let res = match send_to_self(precept, body).await? {
+        LoginAttemptStatusResponse::Pending => LoginPollResponse::Pending,
+        LoginAttemptStatusResponse::Success {
+            user,
+            account,
+            session,
+            access_token_lifetime,
+        } => {
+            let identity = Identity::User(UserIdentity {
+                user_id: user.id,
+                account_id: account.id,
+            });
+            let access_token = JwtClaimsAccess::new(
+                identity,
+                MakeExpiration::FromDuration(access_token_lifetime).into(),
+            )
+            .to_token()
+            .context("Failed to create access token")?;
+            let access_token_exp = access_token.exp;
+            jar = jar.add(access_token.into_cookie());
+            let refresh_token_exp = match session {
+                Some(session) => {
+                    let refresh_token = JwtClaimsRefresh::new(
+                        SessionKey(session.id),
+                        MakeExpiration::FromTime(session.expires_at).into(),
+                    )
+                    .to_token()
+                    .context("Failed to create refresh token")?;
+                    let exp = refresh_token.exp;
+                    jar = jar.add(refresh_token.into_cookie());
+                    Some(exp)
+                }
+                None => None,
+            };
+            LoginPollResponse::Success {
+                user,
+                account,
+                access_token_exp,
+                refresh_token_exp,
+            }
+        }
+    };
+    Ok((jar, axum::Json(res)))
+}
+
+impl MessageLocalStrategy<Precept> for RefreshTokenRequest {
+    fn route(router: Router<actix::Addr<Precept>>) -> Router<actix::Addr<Precept>> {
+        router.route("/refresh", post(handle_refresh_token))
+    }
+
+    async fn handle(
+        res: &Resources,
+        _: &(),
+        from: Identity,
+        message: Self,
+    ) -> precept::Result<Self::Response> {
+        struct SessionDataRow {
+            user_id: Option<Uuid>,
+            account_id: Option<Uuid>,
+            expires_at: Option<PrimitiveDateTime>,
+        }
+
+        impl SessionDataRow {
+            fn into_response(
+                self,
+                access_token_lifetime: Duration,
+            ) -> Result<RefreshTokenResponse, precept::Error> {
+                match (self.user_id, self.account_id, self.expires_at) {
+                    (Some(user_id), Some(account_id), Some(expires_at)) => {
+                        Ok(RefreshTokenResponse {
+                            user_identity: UserIdentity {
+                                user_id,
+                                account_id,
+                            },
+                            access_token_lifetime,
+                            refresh_token_exp: expires_at.as_utc().to_offset(UtcOffset::UTC),
+                        })
+                    }
+                    _ => Err(precept::Error::Internal(anyhow::anyhow!(
+                        "Invalid refresh_session() return values"
+                    ))),
+                }
+            }
+        }
+
+        match (res.refresh_token_lifetime, from) {
+            (Some(lifetime), Identity::Precept { id, on_behalf_of })
+                if id == PreceptID::Auth && on_behalf_of.is_none() =>
+            {
+                sqlx::query_as!(
+                    SessionDataRow,
+                    r#"--sql
+                        SELECT user_id, account_id, expires_at
+                        FROM refresh_session($1, $2)
+                    "#,
+                    message.session_id,
+                    PgInterval::try_from(lifetime)
+                        .map_err(|_| anyhow::anyhow!("Failed to convert access token lifetime"))?,
+                )
+                .fetch_one(&res.pool)
+                .await
+                .map_err(|err| match err {
+                    sqlx::Error::RowNotFound => {
+                        precept::Error::Unauthorized(UnauthorizedError::InvalidSession)
+                    }
+                    other_err => precept::Error::Internal(anyhow::anyhow!(other_err)),
+                })?
+                .into_response(lifetime)
+            }
+            (None, _) => Err(precept::Error::Forbidden),
+            _ => Err(precept::Error::Internal(anyhow::anyhow!(
+                "Token refresh can only be called via REST API"
+            ))),
         }
     }
-    Ok((jar, axum::Json(res)))
+}
+
+async fn handle_refresh_token(
+    session_key: Option<Extension<SessionKey>>,
+    extract::State(precept): extract::State<actix::Addr<Precept>>,
+) -> precept::Result<(CookieJar, axum::Json<RefreshTokenApiResponse>)> {
+    let session_key = session_key.ok_or(UnauthorizedError::Missing)?.0;
+    let RefreshTokenResponse {
+        user_identity,
+        access_token_lifetime,
+        refresh_token_exp,
+    } = send_to_self(
+        precept,
+        RefreshTokenRequest {
+            session_id: session_key.0,
+        },
+    )
+    .await?;
+    let access_token_exp = OffsetDateTime::now_utc() + access_token_lifetime;
+    let mut jar = CookieJar::new();
+    jar = jar.add(
+        JwtClaimsAccess::new(Identity::User(user_identity), access_token_exp)
+            .to_token()
+            .context("Failed to create access token")?
+            .into_cookie(),
+    );
+    jar = jar.add(
+        JwtClaimsRefresh::new(session_key, refresh_token_exp)
+            .to_token()
+            .context("Failed to create refresh token")?
+            .into_cookie(),
+    );
+    Ok((
+        jar,
+        axum::Json(RefreshTokenApiResponse {
+            access_token_exp,
+            refresh_token_exp,
+        }),
+    ))
 }
 
 #[precept_message]
@@ -375,17 +557,55 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
         message: Self,
     ) -> precept::Result<Self::Response> {
         struct UserRow {
-            id: Option<Uuid>,
-            name: Option<String>,
+            user_id: Option<Uuid>,
+            user_name: Option<String>,
+            account_id: Option<Uuid>,
+            session_id: Option<Uuid>,
+            session_created_at: Option<OffsetDateTime>,
+            session_expires_at: Option<OffsetDateTime>,
         }
 
         impl UserRow {
-            fn into_user(self) -> precept::Result<User> {
-                match (self.id, self.name) {
-                    (Some(id), Some(name)) => Ok(User {
-                        id,
-                        name: name.into(),
-                    }),
+            fn try_decompose(
+                self,
+                provider: AuthProvider,
+                provider_username: Option<Box<str>>,
+                provider_display_name: Option<Box<str>>,
+            ) -> precept::Result<(User, Account, Session)> {
+                match (
+                    self.user_id,
+                    self.user_name,
+                    self.account_id,
+                    self.session_id,
+                    self.session_created_at,
+                    self.session_expires_at,
+                ) {
+                    (
+                        Some(user_id),
+                        Some(user_name),
+                        Some(account_id),
+                        Some(session_id),
+                        Some(session_created_at),
+                        Some(session_expires_at),
+                    ) => Ok((
+                        User {
+                            id: user_id,
+                            name: user_name.into(),
+                        },
+                        Account {
+                            id: account_id,
+                            user_id,
+                            provider,
+                            provider_username,
+                            provider_display_name,
+                        },
+                        Session {
+                            id: session_id,
+                            account_id,
+                            created_at: session_created_at,
+                            expires_at: session_expires_at,
+                        },
+                    )),
                     _ => Err(precept::Error::Internal(anyhow!("Invalid user row"))),
                 }
             }
@@ -398,24 +618,30 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                     if entry.provider != provider || message.provider != provider {
                         return Err(precept::Error::Forbidden);
                     };
-                    // @todo: fill in the actual user details
-                    let user = sqlx::query_as!(
+                    let (user, account, session) = sqlx::query_as!(
                         UserRow,
                         r#"--sql
-                            SELECT id, name
-                            FROM get_user_from_login($1, $2, $3, $4)
+                            SELECT user_id, user_name, account_id, session_id, session_created_at, session_expires_at
+                            FROM get_user_from_login($1, $2, $3, $4, $5)
                         "#,
                         provider as AuthProvider,
                         &message.provider_user_id,
                         message.provider_username.as_deref(),
                         message.provider_display_name.as_deref(),
+                        PgInterval::try_from(res.refresh_token_lifetime.unwrap_or(Duration::ZERO))
+                            .map_err(|_| anyhow::anyhow!("Failed to convert access token lifetime"))?,
                     )
-                    .fetch_one(&res.pool)
-                    .await
-                    .into_precept_result()?
-                    .into_user()?;
-                    entry.status = LoginAttemptStatus::Success { user: user.clone() };
-                    Ok(crate::auth::dto::ConfirmLoginResponse { user })
+                        .fetch_one(&res.pool)
+                        .await
+                        .into_precept_result()?
+                        .try_decompose(provider, message.provider_username, message.provider_display_name)?;
+                    let session = res.refresh_token_lifetime.and(Some(session));
+                    entry.status = LoginAttemptStatus::Success {
+                        user: user.clone(),
+                        account: account.clone(),
+                        session: session.clone(),
+                    };
+                    Ok(crate::auth::dto::ConfirmLoginResponse { user, account, session })
                 } else {
                     Err(precept::Error::NotFound)
                 }

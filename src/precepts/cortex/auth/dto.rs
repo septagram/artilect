@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use artilect_macro::dto;
 use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::precept;
+use crate::precept::UserIdentity;
 
 #[dto(always, db, ui, clone, request, response)]
 pub struct User {
@@ -12,11 +14,30 @@ pub struct User {
     pub name: Box<str>,
 }
 
-#[dto(auth, eq, request)]
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "auth_provider", rename_all = "PascalCase")]
+#[dto(always, db, ui, clone, request, response)]
+pub struct Account {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub provider: AuthProvider,
+    pub provider_username: Option<Box<str>>,
+    pub provider_display_name: Option<Box<str>>,
+}
+
+#[dto(auth, db, clone, request, response)]
+pub struct Session {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+}
+
+#[dto(auth, eq, request, response)]
+#[derive(Clone, Copy)]
+// #[sqlx(type_name = "auth_provider", rename_all = "PascalCase")]
 pub enum AuthProvider {
     Telegram,
+    #[serde(other)]
+    Unsupported,
 }
 
 #[dto(auth, request)]
@@ -38,12 +59,39 @@ pub struct LoginPollRequest {
 }
 
 #[dto(auth, response)]
-pub enum LoginAttemptStatus {
+pub enum LoginPollResponse {
     Pending,
-    Success { user: User }, // @todo +linked account: Account;
+    Success {
+        user: User,
+        account: Account,
+        #[serde(with = "time::serde::rfc3339")]
+        access_token_exp: OffsetDateTime,
+        #[serde(with = "time::serde::rfc3339::option")]
+        refresh_token_exp: Option<OffsetDateTime>,
+    },
 }
 
-pub type LoginPollResponse = LoginAttemptStatus;
+#[dto(auth, request)]
+#[message(RefreshTokenResponse, RefreshTokenMessage)]
+pub struct RefreshTokenRequest {
+    pub session_id: Uuid,
+}
+
+#[dto(auth, response)]
+pub struct RefreshTokenResponse {
+    pub user_identity: UserIdentity,
+    pub access_token_lifetime: Duration,
+    #[serde(with = "time::serde::rfc3339")]
+    pub refresh_token_exp: OffsetDateTime,
+}
+
+#[dto(always, response)]
+pub struct RefreshTokenApiResponse {
+    #[serde(with = "time::serde::rfc3339")]
+    pub access_token_exp: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub refresh_token_exp: OffsetDateTime,
+}
 
 // #[dto(auth, request)]
 // #[message(LinkResponse, LinkMessage)]
@@ -64,6 +112,8 @@ pub struct ConfirmLoginRequest {
 #[dto(auth, response)]
 pub struct ConfirmLoginResponse {
     pub user: User,
+    pub account: Account,
+    pub session: Option<Session>,
 }
 
 #[dto(auth, request)]

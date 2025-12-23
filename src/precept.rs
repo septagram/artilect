@@ -61,7 +61,7 @@ pub struct SignedMessage<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct UserIdentity {
     pub user_id: Uuid,
-    // account_id: Uuid,
+    pub account_id: Uuid,
     // is_operator: bool,
     // or role: Role, // derives Copy
 }
@@ -121,11 +121,11 @@ pub trait MessageRemoteStrategy: Message {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub trait CoercibleResult<T> {
+pub trait IntoPreceptResult<T> {
     fn into_precept_result(self: Self) -> Result<T>;
 }
 
-impl<T, E> CoercibleResult<T> for std::result::Result<T, E>
+impl<T, E> IntoPreceptResult<T> for std::result::Result<T, E>
 where
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -179,6 +179,45 @@ impl axum::response::IntoResponse for Error {
                 D::Unauthorized(error) => (status, axum::Json(error)).into_response(), // @todo: improve
             },
             None => status.into_response(),
+        }
+    }
+}
+
+trait IntoPreceptSpecificResultTyped {
+    fn into_precept_result_t<T: DeserializeOwned>(self: Self) -> impl Future<Output = Result<T>>;
+}
+
+#[cfg(feature = "client-http2")]
+impl IntoPreceptSpecificResultTyped for reqwest::Result<reqwest::Response> {
+    async fn into_precept_result_t<T: DeserializeOwned>(self: Self) -> Result<T> {
+        match self {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() {
+                    response.json::<T>().await.map_err(|_| Error::InvalidResponse)
+                } else {
+                    Err(match status.as_u16() {
+                        400 => match response.json::<HttpErrorBodyBadRequest>().await {
+                            Ok(body) => Error::BadRequest(body.error),
+                            Err(_) => Error::InvalidResponse,
+                        },
+                        401 => match response.json::<UnauthorizedError>().await {
+                            Ok(body) => Error::Unauthorized(body),
+                            Err(_) => Error::InvalidResponse,
+                        },
+                        403 => Error::Forbidden,
+                        404 => Error::NotFound,
+                        500 => Error::Internal(anyhow::anyhow!("Internal error")),
+                        501 => Error::NotImplemented,
+                        503 => Error::ServiceUnavailable,
+                        _ => Error::InvalidResponse
+                    })
+                }
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                Err(Error::ServiceUnavailable)
+            },
         }
     }
 }

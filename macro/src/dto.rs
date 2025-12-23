@@ -109,21 +109,21 @@ pub fn dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if flags.request && flags.response {
-        universal_derives.push(syn::parse_quote!(Serialize));
-        universal_derives.push(syn::parse_quote!(Deserialize));
+        universal_derives.push(syn::parse_quote!(serde::Serialize));
+        universal_derives.push(syn::parse_quote!(serde::Deserialize));
     } else if flags.request {
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_in, derive(Deserialize))]
+            #[cfg_attr(feature = #feature_in, derive(serde::Deserialize))]
         });
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_out, derive(Serialize))]
+            #[cfg_attr(feature = #feature_out, derive(serde::Serialize))]
         });
     } else if flags.response {
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_in, derive(Serialize))]
+            #[cfg_attr(feature = #feature_in, derive(serde::Serialize))]
         });
         item_attrs.push(syn::parse_quote! {
-            #[cfg_attr(feature = #feature_out, derive(Deserialize))]
+            #[cfg_attr(feature = #feature_out, derive(serde::Deserialize))]
         });
     }
 

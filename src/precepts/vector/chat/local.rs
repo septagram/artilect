@@ -22,7 +22,7 @@ use crate::{
     infer::{self, PlainText, RootChain},
     orchestra::AddressBook,
     precept::{
-        self, CoercibleResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID,
+        self, IntoPreceptResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID,
         SignedMessage,
     },
 };

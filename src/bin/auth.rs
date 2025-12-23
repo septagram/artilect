@@ -33,6 +33,8 @@ async fn main() {
             // Let's keep the allocated memory in single-digit MB. Also not worth it to make it configurable now.
             login_attempts_timeout_min: 5,
             auth_providers: cortex::auth::AuthFlowBackend::default_flows(telegram_bot_name),
+            access_token_lifetime: *artilect::config::back_shared::JWT_ACCESS_LIFETIME,
+            refresh_token_lifetime: *artilect::config::back_shared::JWT_REFRESH_LIFETIME,
         },
         router: auth.build_router() => router
     };

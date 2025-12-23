@@ -51,21 +51,28 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
 
         impl Orchestra {
             pub fn to_address_book(&self, client_id: Option<crate::precept::Identity>) -> AddressBook {
-                use crate::auth::middleware::http_client::{HttpClient, CookieStorage};
+                #[cfg(feature = "client-http2")]
+                use crate::precept::client::http::{HttpClient, SecretProvider};
 
+                #[cfg(feature = "client-http2")]
                 let client = client_id.as_ref().map(|id| {
-                    let cookie_storage = match id {
+                    let secret_provider = match id {
+                        #[cfg(any(feature = "desktop", feature = "mobile"))]
                         crate::precept::Identity::User(_) => {
-                            CookieStorage::User {
+                            SecretProvider::UserCookiesNative {
                                 base_url: self.base_url.clone(),
                             }
                         }
+                        #[cfg(feature = "backend")]
                         crate::precept::Identity::Precept { id, .. } => {
-                            CookieStorage::Precept { id: id.clone() }
+                            SecretProvider::PreceptCookie { id: id.clone() }
                         }
                     };
-                    HttpClient::new(cookie_storage)
+                    HttpClient::new(self.base_url, secret_provider)
                 });
+
+                #[cfg(not(feature = "client-http2"))]
+                let client = None;
 
                 AddressBook {
                     #address_book_converters
@@ -78,7 +85,10 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
 
         pub struct AddressBook {
             client_id: Option<crate::precept::Identity>,
+            #[cfg(feature = "client-http2")]
             client: Option<HttpClient>,
+            #[cfg(not(feature = "client-http2"))]
+            client: Option<()>,
 
             #address_book_fields
         }
@@ -93,7 +103,7 @@ pub fn orchestra_from_precepts(input: TokenStream) -> TokenStream {
         impl PartialEq for AddressBook {
             fn eq(&self, other: &Self) -> bool {
                 if self.client_id != other.client_id { return false }
-                if self.token != other.token { return false }
+                if self.client != other.client { return false }
                 #comparators
                 true
             }
