@@ -197,9 +197,8 @@ pub fn orchestra(input: TokenStream) -> TokenStream {
         use #crate_ident::{
             precept::{Routable, PreceptConstructor, client::*},
             precepts::{
-                cortex::auth::middleware::RouterAuth,
-                cortex,
-                vector,
+                self,
+                auth::middleware::RouterAuth,
             },
         };
         #address_preconstructors

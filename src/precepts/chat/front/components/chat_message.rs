@@ -1,9 +1,9 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-use crate::precepts::vector::chat::front::state::State;
+use crate::precepts::chat::front::state::State;
 
-pub static CSS: Asset = asset!("/src/precepts/vector/chat/front/components/chat_message.css");
+pub static CSS: Asset = asset!("/src/precepts/chat/front/components/chat_message.css");
 #[component]
 pub fn ChatMessage(message_id: Uuid) -> Element {
     let b = classnames::classname("chat-message");

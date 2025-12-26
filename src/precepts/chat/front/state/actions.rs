@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::{State, SyncState, consume_sync_update_batch};
 use crate::{
     orchestra::AddressBook,
-    precepts::vector::chat::{
+    precepts::chat::{
         Client,
         dto::{
             ChatMessage, FetchThreadRequest, FetchUserThreadsRequest, OneToManyChild,

@@ -96,11 +96,9 @@ src/
 ├── precept.rs        # Core precept traits and types
 ├── precepts.rs       # Precept module declarations
 ├── precepts/
-│   ├── cortex/       # Core system precepts
-│   │   └── auth/     # Authentication & authorization
-│   └── vector/       # User-facing precepts
-│       ├── chat/     # Chat interface with LLM integration
-│       └── telegram/ # Telegram bot integration
+│   ├── auth/         # Authentication & authorization
+│   ├── chat/         # Chat interface with LLM integration
+│   └── telegram/     # Telegram bot integration
 ├── orchestra.rs      # Precept orchestration via macros
 ├── infer/            # LLM inference utilities
 ├── config/           # Configuration management

@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use url::Url;
 use uuid::Uuid;
-use artilect::precepts::vector::chat::{ensure_artilect_user, AGENT_PROMPT_TEXT};
+use artilect::precepts::chat::{ensure_artilect_user, AGENT_PROMPT_TEXT};
 use artilect_macro::orchestra;
 
 #[actix::main]

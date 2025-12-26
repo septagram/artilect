@@ -2,12 +2,12 @@ use dioxus::prelude::*;
 use uuid::Uuid;
 
 use super::ChatMessage;
-use crate::precepts::vector::chat::front::state::{
+use crate::precepts::chat::front::state::{
     State, SyncState,
     actions::{FetchThreadAction, SendMessageAction},
 };
 
-pub static CSS: Asset = asset!("/src/precepts/vector/chat/front/components/chat.css");
+pub static CSS: Asset = asset!("/src/precepts/chat/front/components/chat.css");
 
 #[component]
 pub fn Chat(thread_id: Option<Uuid>) -> Element {

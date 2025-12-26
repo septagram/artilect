@@ -269,13 +269,17 @@ impl PreceptConstructor for Precept {
 
 impl Routable for actix::Addr<Precept> {
     fn build_router(self) -> Router {
+        // If from_fn_with_state fails:
+        // https://docs.rs/tower-service/0.3.3/tower_service/trait.Service.html
+        // https://docs.rs/axum/latest/axum/struct.Router.html#method.layer
+        // https://docs.rs/axum/latest/axum/middleware/index.html
         let mut service_routes = Router::new();
         service_routes = ConfirmLoginRequest::route(service_routes);
         service_routes = InvalidateLoginRequest::route(service_routes);
-        service_routes = service_routes.require_access_token();
+        service_routes = service_routes.require_access_token(); // NOW: how to pass the decoding key here?
         let mut refresh_routes = Router::new();
         refresh_routes = RefreshTokenRequest::route(refresh_routes);
-        refresh_routes = refresh_routes.require_refresh_token();
+        refresh_routes = refresh_routes.require_refresh_token(); // ALSO: we can have a different fn, build_auth_router, and eliminate the message back and forth 
         let mut entry_routes = Router::new();
         entry_routes = BotLoginStartRequest::route(entry_routes);
         entry_routes = ListAuthProvidersRequest::route(entry_routes);

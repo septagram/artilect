@@ -2,7 +2,7 @@ use reqwest::RequestBuilder;
 use url::{ParseError, Url};
 use crate::{
     precept::MessageRemoteStrategy,
-    precepts::vector::chat::dto::{
+    precepts::chat::dto::{
         FetchThreadRequest, FetchUserThreadsRequest, SendMessageRequest,
     },
 };

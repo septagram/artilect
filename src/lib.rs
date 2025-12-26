@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub mod config;
 pub mod precept;
 pub mod precepts;
-pub use precepts::cortex::auth;
+pub use precepts::auth;
 
 #[cfg(feature = "infer")]
 pub mod infer;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use artilect::{
     orchestra::{Orchestra, use_address_book},
-    precepts::vector::chat::{Addr, front::App},
+    precepts::chat::{Addr, front::App},
 };
 use dioxus::{logger::tracing::Level, prelude::*};
 use uuid::{Uuid, uuid};

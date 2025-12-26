@@ -6,9 +6,9 @@ use cfg_block::cfg_block;
 use crate::precept::Identity;
 
 orchestra_from_precepts! {
-    auth: cortex::auth,
-    chat: vector::chat,
-    telegram: vector::telegram,
+    auth: auth,
+    chat: chat,
+    telegram: telegram,
     // valid ignored comment
 }
 

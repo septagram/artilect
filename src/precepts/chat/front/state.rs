@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub mod actions;
 use crate::{
     Identifiable,
-    precepts::vector::chat::dto::{ChatMessage, SyncUpdate, Thread},
+    precepts::chat::dto::{ChatMessage, SyncUpdate, Thread},
 };
 
 static USER_ID_STR: &str = dotenvy_macro::dotenv!("CHAT_USER_ID");
