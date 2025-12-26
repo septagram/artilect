@@ -1,5 +1,3 @@
-use std::path::MAIN_SEPARATOR;
-
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{parse_macro_input, parse_quote, punctuated::Punctuated};
@@ -55,29 +53,6 @@ pub fn if_precept_front(input: TokenStream, item: TokenStream) -> TokenStream {
     quote! { #attr #item }.into()
 }
 
-fn current_file_path() -> Box<str> {
-    let span = proc_macro2::Span::call_site();
-    let local_file = span.local_file().unwrap();
-    let mod_path = local_file.as_path();
-    let mod_filename = mod_path.to_str().unwrap();
-    Box::from(mod_filename)
-}
-
-fn get_precept_ident() -> syn::Ident {
-    let current_file_path = current_file_path();
-    let mut split_path: Vec<&str> = current_file_path.split(MAIN_SEPARATOR).collect();
-    split_path.push(split_path.last().unwrap().split('.').next().unwrap());
-    let pos = split_path
-        .iter()
-        .position(|cur| *cur == "local")
-        .unwrap_or(0);
-    if pos == 0 {
-        panic!("Could not find precept name in file path");
-    };
-    let precept_name = split_path[pos - 1];
-    syn::Ident::new(precept_name, proc_macro2::Span::call_site())
-}
-
 // Must be applied to both a precept module and a precept struct
 pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as syn::Item);
@@ -90,8 +65,8 @@ pub fn precept(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // - Add correct conditional compilation attributes onto a precept module and its submodules
 pub fn precept_mod(args: TokenStream, mut module: syn::ItemMod) -> TokenStream {
-    let is_always_included = parse_macro_input!(args as Option<syn::Ident>)
-        .map_or(false, |ident| ident == "always");
+    let is_always_included =
+        parse_macro_input!(args as Option<syn::Ident>).map_or(false, |ident| ident == "always");
     let precept_name = module.ident.clone();
     let (brace, mut items) = module.content.take().expect(
         "Precept module must have content. Consider using the `#![artilect_macro::precept]` macro as the first line of the precept module file."
@@ -180,13 +155,9 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
             quote! { &*state },
             quote! { #state_type },
         ),
-        None => (
-            quote! {},
-            quote! {&()},
-            parse_quote! {()},
-        ),
+        None => (quote! {}, quote! {&()}, parse_quote! {()}),
     };
-    
+
     let router_impl: Option<syn::ItemImpl> = match has_custom_router {
         false => Some(parse_quote! {
             #[cfg(feature = "server-http2")]
@@ -203,7 +174,7 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
 
     quote! {
         #struct_def
-        
+
         #router_impl
 
         impl crate::precept::Precept for #struct_name {
@@ -212,7 +183,7 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         }
 
         impl actix::Supervised for #struct_name {}
-        
+
         impl <M> actix::Handler<SignedMessage<M>> for #struct_name
         where
             M: crate::precept::MessageLocalStrategy<#struct_name>,
@@ -271,5 +242,6 @@ pub fn route_callback(item: TokenStream) -> TokenStream {
                 .map_actix_error()
                 .map(|response| axum::Json(response))
         }
-    }.into()
+    }
+    .into()
 }
