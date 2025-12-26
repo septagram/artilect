@@ -1,14 +1,14 @@
 use std::{mem, sync::Arc};
 
 use anyhow::Context;
-use cookie_store::{CookieExpiration, CookieStore};
+use cookie_store::{self, CookieExpiration};
 use itertools::Itertools;
 use keyring::Entry;
 use parking_lot::Mutex;
 use reqwest::header::HeaderValue;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use time::{Duration, OffsetDateTime, UtcDateTime, UtcOffset};
-use tokio::sync;
+use tokio::sync::mpsc;
 use url::Url;
 
 #[cfg(feature = "backend")]
@@ -25,6 +25,34 @@ use crate::{
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect";
 
+struct BaseUrl {
+    base: Url,
+    refresh_token: Url,
+    login: Url,
+}
+
+impl BaseUrl {
+    fn new(base_url: Url, auth_base_url: Option<Url>) -> Result<Self, anyhow::Error> {
+        let context = |step: &str| {
+            let base_url = base_url.as_str();
+            move || format!("Failed to generate {} URL for {}", step, base_url)
+        };
+        let auth_base_url = auth_base_url
+            .ok_or_else(|| base_url.join("auth/"))
+            .with_context(context("auth base"))?;
+        let refresh_token_url = auth_base_url
+            .join("refresh")
+            .with_context(context("refresh token"))?;
+        let login_url = auth_base_url.join("login").with_context(context("login"))?;
+
+        Ok(Self {
+            base: base_url,
+            refresh_token: refresh_token_url,
+            login: login_url,
+        })
+    }
+}
+
 struct HeaderExpPair {
     header: HeaderValue,
     exp: CookieExpiration,
@@ -39,8 +67,7 @@ enum ClientSecrets {
     },
     #[cfg(feature = "native")]
     UserCookiesNative {
-        base_url: Url,
-        refresh_token_url: Url,
+        base_url: BaseUrl,
         cookies: cookie_store::CookieStore,
         access_token_exp: Option<CookieExpiration>,
         refresh_token_exp: Option<CookieExpiration>,
@@ -74,10 +101,9 @@ impl ClientSecrets {
     }
 
     #[cfg(feature = "native")]
-    fn default_user(base_url: Url, refresh_token_url: Url) -> Self {
+    fn default_user(base_url: BaseUrl) -> Self {
         Self::UserCookiesNative {
             base_url,
-            refresh_token_url,
             cookies: cookie_store::CookieStore::new(),
             access_token_exp: None,
             refresh_token_exp: None,
@@ -85,11 +111,7 @@ impl ClientSecrets {
     }
 
     #[cfg(feature = "native")]
-    fn load_native(
-        warnings_tx: &sync::mpsc::Sender<anyhow::Error>,
-        base_url: Url,
-        refresh_token_url: Url,
-    ) -> Self {
+    fn load_native(warnings_tx: &mpsc::Sender<anyhow::Error>, base_url: BaseUrl) -> Self {
         let context = || format!("Failed to load secrets for {}", &base_url);
         match Entry::new(KEYRING_SERVICE_NAME, &*base_url).and_then(|entry| entry.get_secret()) {
             Ok(secret) => {
@@ -97,16 +119,15 @@ impl ClientSecrets {
                     .with_context(context)?;
                 Self::UserCookiesNative {
                     base_url,
-                    refresh_token_url,
                     cookies: kss.cookies,
                     access_token_exp: kss.access_token_exp,
                     refresh_token_exp: kss.refresh_token_exp,
                 }
             }
-            Err(keyring::Error::NoEntry) => Self::default_user(base_url, refresh_token_url),
+            Err(keyring::Error::NoEntry) => Self::default_user(base_url),
             Err(err) => {
                 Err(err).with_context(context).report_err(warnings_tx);
-                Self::default_user(base_url, refresh_token_url)
+                Self::default_user(base_url)
             }
         }
     }
@@ -114,7 +135,7 @@ impl ClientSecrets {
 
 pub struct SecretProvider {
     secrets: Mutex<ClientSecrets>,
-    warnings_tx: sync::mpsc::Sender<anyhow::Error>,
+    warnings_tx: mpsc::Sender<anyhow::Error>,
 }
 
 impl PartialEq for SecretProvider {
@@ -259,7 +280,7 @@ pub enum TokenStatus {
 impl SecretProvider {
     #[cfg(feature = "backend")]
     pub fn new_precept(
-        warnings_tx: sync::mpsc::Sender<anyhow::Error>,
+        warnings_tx: mpsc::Sender<anyhow::Error>,
         id: PreceptID,
         token_lifetime: Duration,
     ) -> Result<Self, anyhow::Error> {
@@ -271,24 +292,11 @@ impl SecretProvider {
 
     #[cfg(feature = "native")]
     pub fn new_user(
-        warnings_tx: sync::mpsc::Sender<anyhow::Error>,
-        base_url: Url,
-        refresh_token_url: Option<Url>,
+        warnings_tx: mpsc::Sender<anyhow::Error>,
+        base_url: BaseUrl,
     ) -> Result<Self, anyhow::Error> {
-        let refresh_token_url = refresh_token_url
-            .ok_or_else(|| base_url.join("auth/refresh"))
-            .with_context(|| {
-                format!(
-                    "Failed to generate refresh token URL for {}",
-                    base_url.as_str()
-                )
-            })?;
         Ok(Self {
-            secrets: Mutex::new(ClientSecrets::load_native(
-                &warnings_tx,
-                base_url,
-                refresh_token_url,
-            )),
+            secrets: Mutex::new(ClientSecrets::load_native(&warnings_tx, base_url)),
             warnings_tx,
         })
     }
