@@ -5,6 +5,7 @@
     proc_macro_hygiene,
     const_option_ops,
     try_blocks,
+    min_specialization,
 )]
 
 use uuid::Uuid;

@@ -18,6 +18,8 @@ pub mod auth {
     #[cfg(feature = "server-http2")]
     pub use extract::*;
 }
+#[if_precept_in(auth)]
+pub use auth::Precept as AuthPrecept;
 
 #[precept]
 pub mod chat {
@@ -29,9 +31,13 @@ pub mod chat {
     #[super::if_precept_in(chat)]
     pub use local::{AGENT_PROMPT_TEXT, ensure_artilect_user};
 }
+#[if_precept_in(chat)]
+pub use chat::Precept as ChatPrecept;
 
 #[precept]
 pub mod telegram {
     pub mod dto;
     mod local;
 }
+#[if_precept_in(telegram)]
+pub use telegram::Precept as TelegramPrecept;

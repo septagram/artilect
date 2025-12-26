@@ -16,45 +16,19 @@ use url::Url;
 use crate::auth::middleware::JwtClaims;
 use crate::{
     auth::dto::RefreshTokenApiResponse,
+    orchestra::BaseUrl,
     precept,
     precept::{
         Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID, UnauthorizedError,
     },
     util::report_err::*,
 };
+use crate::orchestra::PlexusClientBase;
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
 //
 // ...to be fair, there's plenty of custom logic here...
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect";
-
-struct BaseUrl {
-    base: Url,
-    refresh_token: Url,
-    login: Url,
-}
-
-impl BaseUrl {
-    fn new(base_url: Url, auth_base_url: Option<Url>) -> Result<Self, anyhow::Error> {
-        let context = |step: &str| {
-            let base_url = base_url.as_str();
-            move || format!("Failed to generate {} URL for {}", step, base_url)
-        };
-        let auth_base_url = auth_base_url
-            .ok_or_else(|| base_url.join("auth/"))
-            .with_context(context("auth base"))?;
-        let refresh_token_url = auth_base_url
-            .join("refresh")
-            .with_context(context("refresh token"))?;
-        let login_url = auth_base_url.join("login").with_context(context("login"))?;
-
-        Ok(Self {
-            base: base_url,
-            refresh_token: refresh_token_url,
-            login: login_url,
-        })
-    }
-}
 
 struct HeaderExpPair {
     header: HeaderValue,
@@ -297,7 +271,11 @@ impl SecretProvider {
         encoding_key: Arc<EncodingKey>,
     ) -> Result<Self, anyhow::Error> {
         Ok(Self {
-            secrets: Mutex::new(ClientSecrets::default_precept(id, token_lifetime, encoding_key)),
+            secrets: Mutex::new(ClientSecrets::default_precept(
+                id,
+                token_lifetime,
+                encoding_key,
+            )),
             warnings_tx,
         })
     }
@@ -381,7 +359,7 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub fn new(prefixed_url: Arc<Url>, secret_provider: SecretProvider) -> Self {
+    pub fn new(prefixed_url: Arc<Url>, client_base: PlexusClientBase) -> Result<Self> {
         let secret_provider = Arc::new(secret_provider);
         let client = reqwest::Client::builder()
             .cookie_provider(secret_provider.clone())

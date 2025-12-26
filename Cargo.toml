@@ -60,6 +60,7 @@ keywords.workspace = true
 backend = [
     "dep:sqlx",
     "dep:actix",
+    "dep:anymap3",
     "dep:dashmap",
     "dep:humantime",
 ]
@@ -87,21 +88,23 @@ frontend = [
 ]
 infer = [
     "dep:markup",
-    "dep:regex",
     "dep:reqwest",
     "dep:serde_yaml",
     "dep:textwrap",
 ]
 keyring-cookie-store = ["dep:cookie_store"]
 
-auth-in = ["backend"]
-auth-out = ["client-http2"]
+auth = []
+auth-in = ["auth", "backend"]
+auth-out = ["auth", "client-http2"]
 auth-front = ["frontend"]
-chat-in = ["backend", "infer"]
-chat-out = ["client-http2"]
+chat = []
+chat-in = ["chat", "backend", "infer"]
+chat-out = ["chat", "client-http2"]
 chat-front = ["frontend"]
-telegram-in = ["backend", "dep:teloxide"]
-telegram-out = ["client-http2"]
+telegram = []
+telegram-in = ["telegram", "backend", "dep:teloxide"]
+telegram-out = ["telegram", "client-http2"]
 
 native = []
 desktop = ["dioxus/desktop", "dep:tao", "keyring-cookie-store", "native"]
@@ -109,11 +112,14 @@ mobile = ["dioxus/mobile", "keyring-cookie-store", "native"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
+bon = "3.8"
 cfg_block = "0.2.0"
+derive_more = { version = "2.1", features = ["from"] }
 indoc = "2.0"
 ouroboros = { version = "0.18" }
 tokio = { version = "1.47", features = ["full"] }
 parking_lot = { version = "0.12", features = ["nightly"] }
+regex = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 uuid = { version = "1.13", features = ["v4", "serde", "js", "fast-rng"] }
@@ -133,6 +139,7 @@ thiserror = "2.0"
 keyring = { version = "3.6", features = ["linux-native-async-persistent", "windows-native", "apple-native"] }
 url = "2.5"
 
+anymap3 = { version = "1.0.1", optional = true }
 actix = { version = "0.13", optional = true }
 dioxus = { version = "0.6", optional = true }
 futures-util = { version = "0.3", optional = true }
@@ -142,7 +149,6 @@ markdown = { version = "1.0", optional = true }
 rand = { version = "0.9", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 textwrap = { version = "0.16", features = ["terminal_size"], optional = true }
-regex = { version = "1.11", optional = true }
 reqwest = { version = "0.12", optional = true, features = ["json", "cookies"] }
 cookie = { version = "0.18", optional = true }
 cookie_store = { version = "0.22", optional = true, features = ["serde_json"] }

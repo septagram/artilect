@@ -130,7 +130,10 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
     let struct_name = struct_def.ident.clone();
     let message_types =
         parse_macro_input!(attr with Punctuated<syn::Ident, syn::Token![,]>::parse_terminated);
-    let message_type_iter = message_types.iter();
+    let mut message_type_iter = message_types.into_iter();
+    let precept_name: syn::Ident = message_type_iter
+        .next()
+        .expect("Expected precept name as first argument");
     let has_custom_router = take_attribute("custom_router", &mut struct_def.attrs).is_some();
     let mut resources_type = None;
     let mut state_type = None;
@@ -157,15 +160,18 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         ),
         None => (quote! {}, quote! {&()}, parse_quote! {()}),
     };
+    let feature_out = format!("{}-out", precept_name);
+    let precept_name_str = precept_name.to_string();
 
     let router_impl: Option<syn::ItemImpl> = match has_custom_router {
         false => Some(parse_quote! {
             #[cfg(feature = "server-http2")]
             impl crate::precept::Routable for actix::Addr<#struct_name> {
                 fn build_router(self) -> axum::Router {
+                    use crate::auth::middleware::RouterAuth;
                     let mut router = axum::Router::new();
                     #(router = #message_type_iter::route(router);)*
-                    router.with_state(self)
+                    router.with_state(self).require_access_token()
                 }
             }
         }),
@@ -178,6 +184,20 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         #router_impl
 
         impl crate::precept::Precept for #struct_name {
+            const NAME = #precept_name_str;
+
+            type AddrLocal = crate::precept::client::AddrLocal<Self>;
+            #[cfg(not(feature = #feature_out))]
+            type Addr = crate::precept::client::LocalAddr<Self>;
+            #[cfg(feature = #feature_out)]
+            type Addr = crate::precept::client::Addr<Self>;
+
+            type ClientLocal = crate::precept::client::ClientLocal<Self>;
+            #[cfg(not(feature = #feature_out))]
+            type Client = crate::precept::client::ClientLocal<Self>;
+            #[cfg(feature = #feature_out)]
+            type Client = crate::precept::client::Client<Self>;
+
             type Resources = #resources_type;
             type State = #state_type;
         }

@@ -2,8 +2,16 @@ use std::sync::Arc;
 
 use cfg_block::cfg_block;
 use serde::de::DeserializeOwned;
+use derive_more::From;
+use crate::orchestra::{PlexusClientBase, PlexusClientConfig};
+use super::{Error, Identity, IntoPreceptSpecificResultTyped, Message, SignedMessage, UnauthorizedError};
 
-use super::{Error, Identity, IntoPreceptSpecificResultTyped, SignedMessage, UnauthorizedError};
+pub enum OnlyRemote {}
+
+// trait AddrTrait {
+//     fn send<S: Message>(&self, msg: S) -> impl Future<Output = super::Result<S::Response>>;
+//     // that's actually a client, not an addr
+// }
 
 cfg_block! {
     #[cfg(feature = "backend")] {
@@ -98,22 +106,22 @@ cfg_block! {
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
         mod http;
-        use http::HttpClient;
+        pub use http::HttpClient;
+        pub use http::SecretProvider;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
-            base_url: Arc<str>,
+            prefixed_url: Arc<url::Url>,
         }
 
         impl AddrRemote {
-            pub fn new(base_url: Arc<str>) -> Self {
-                Self { base_url }
+            pub fn new(prefixed_url: Arc<url::Url>) -> Self {
+                Self { prefixed_url }
             }
 
-            pub fn to_client(&self, _client_id: Option<Identity>, client: Option<HttpClient>) -> ClientRemote {
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> ClientRemote {
                 ClientRemote {
-                    client: client.expect("Client must be provided for remote precepts"),
-                    base_url: self.base_url.clone(),
+                    client: HttpClient::new(self.prefixed_url, client_base)
                 }
             }
         }
@@ -121,7 +129,6 @@ cfg_block! {
         #[derive(Clone, PartialEq)]
         pub struct ClientRemote {
             client: HttpClient,
-            base_url: Arc<str>,
         }
 
         impl ClientRemote {
@@ -138,7 +145,7 @@ cfg_block! {
     }
 
     #[cfg(all(feature = "backend", feature = "client-http2"))] {
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone, PartialEq, From)]
         pub enum Addr<P: actix::Actor> {
             Local(AddrLocal<P>),
             Remote(AddrRemote),
