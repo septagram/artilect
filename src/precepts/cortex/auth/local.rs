@@ -13,6 +13,7 @@ use axum_extra::extract::{
 };
 use dashmap::DashMap;
 use indoc::formatdoc;
+use jsonwebtoken::{DecodingKey, EncodingKey};
 use sqlx::{PgPool, postgres::types::PgInterval};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcDateTime, UtcOffset};
 use tokio::sync::{mpsc, oneshot};
@@ -28,7 +29,10 @@ use crate::{
             ListAuthProvidersResponse, LoginPollRequest, LoginPollResponse,
             RefreshTokenApiResponse, RefreshTokenRequest, RefreshTokenResponse, Session,
         },
-        middleware::{JwtClaims, JwtClaimsAccess, JwtClaimsRefresh, MakeExpiration, RouterAuth},
+        middleware::{
+            JwtClaims, JwtClaimsAccess, JwtClaimsRefresh, MakeExpiration, RouterAuth,
+            get_jwt_key_pair,
+        },
     },
     orchestra::AddressBook,
     precept,
@@ -152,24 +156,29 @@ struct LoginAttempt {
 }
 
 pub struct Config {
-    pub pool: PgPool,
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
     pub auth_providers: Vec<AuthFlowBackend>,
+    pub rest: StoredConfig,
+}
+
+pub struct StoredConfig {
+    pub pool: PgPool,
+    pub instance_id: Box<str>,
     pub access_token_lifetime: Duration,
     pub refresh_token_lifetime: Option<Duration>,
 }
 
 pub struct Resources {
-    pub address_book: AddressBook,
-    pub pool: PgPool,
-    pub login_attempts_map: DashMap<u128, LoginAttempt>,
-    pub login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
-    pub login_attempts_timeout: Duration,
-    pub auth_providers: HashMap<Box<str>, AuthFlowBackend>,
-    pub auth_providers_info: Arc<[AuthProviderInfo]>,
-    pub access_token_lifetime: Duration,
-    pub refresh_token_lifetime: Option<Duration>,
+    address_book: AddressBook,
+    login_attempts_map: DashMap<u128, LoginAttempt>,
+    login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
+    login_attempts_timeout: Duration,
+    auth_providers: HashMap<Box<str>, AuthFlowBackend>,
+    auth_providers_info: Arc<[AuthProviderInfo]>,
+    encoding_key: EncodingKey,
+    decoding_key: Arc<DecodingKey>,
+    rest: StoredConfig,
 }
 
 #[precept(
@@ -196,14 +205,12 @@ impl actix::Actor for Precept {
 
 impl PreceptConstructor for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Self {
+    fn new(address_book: AddressBook, config: Config) -> Result<Self, anyhow::Error> {
         let Config {
-            pool,
             max_concurrent_login_attempts,
             login_attempts_timeout_min,
             auth_providers: auth_providers_config,
-            access_token_lifetime,
-            refresh_token_lifetime,
+            rest,
         } = config;
         let (expire_tx, mut expire_rx) = mpsc::channel(max_concurrent_login_attempts);
         let (stop_tx, mut stop_rx) = oneshot::channel();
@@ -213,16 +220,17 @@ impl PreceptConstructor for Precept {
             auth_providers_info.push(auth_provider.to_auth_provider_info());
             auth_providers.insert(auth_provider.id(), auth_provider);
         }
+        let (encoding_key, decoding_key) = get_jwt_key_pair(&*rest.instance_id)?;
         let resources = Arc::new(Resources {
             address_book,
-            pool,
             login_attempts_map: DashMap::new(),
             login_attempts_expiry_queue: expire_tx,
             login_attempts_timeout: Duration::minutes(login_attempts_timeout_min.into()),
             auth_providers,
             auth_providers_info: auth_providers_info.into(),
-            access_token_lifetime,
-            refresh_token_lifetime,
+            encoding_key,
+            decoding_key: Arc::new(decoding_key),
+            rest,
         });
 
         let res = resources.clone();
@@ -248,10 +256,10 @@ impl PreceptConstructor for Precept {
             }
         });
 
-        Self {
+        Ok(Self {
             resources,
             stop_signal: Some(stop_tx),
-        }
+        })
     }
 
     fn id(_config: &Self::Config) -> PreceptID {
@@ -364,7 +372,7 @@ impl MessageLocalStrategy<Precept> for LoginAttemptStatusQuery {
                             user,
                             account,
                             session,
-                            access_token_lifetime: res.access_token_lifetime,
+                            access_token_lifetime: res.rest.access_token_lifetime,
                         },
                     }),
                     None => {
@@ -473,7 +481,7 @@ impl MessageLocalStrategy<Precept> for RefreshTokenRequest {
             }
         }
 
-        match (res.refresh_token_lifetime, from) {
+        match (res.rest.refresh_token_lifetime, from) {
             (Some(lifetime), Identity::Precept { id, on_behalf_of })
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
             {
@@ -487,7 +495,7 @@ impl MessageLocalStrategy<Precept> for RefreshTokenRequest {
                     PgInterval::try_from(lifetime)
                         .map_err(|_| anyhow::anyhow!("Failed to convert access token lifetime"))?,
                 )
-                .fetch_one(&res.pool)
+                .fetch_one(&res.rest.pool)
                 .await
                 .map_err(|err| match err {
                     sqlx::Error::RowNotFound => {

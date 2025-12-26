@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::{
     Router,
-    extract::Request,
-    middleware::{Next, from_fn},
+    extract::{Request, State},
+    middleware::{Next, from_fn_with_state},
     response::Response,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
@@ -11,25 +12,26 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Validation, decode, enco
 use keyring::Entry;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use time::{OffsetDateTime, UtcDateTime, UtcOffset};
+use time::{OffsetDateTime, UtcOffset};
 use uuid::Uuid;
+
 use crate::{
     precept,
     precept::{Identity, UnauthorizedError},
 };
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect-cortex";
-pub const ARTILECT_INSTANCE_ID: &str = "artilect"; // To support running multiple artilects, make dynamic.
 pub const JWT_SECRET_NAME: &str = "jwt-secret";
 
-static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
+pub fn get_secret(instance_id: &str, secret_name: &str) -> Result<Box<[u8]>, anyhow::Error> {
+    let context = |reason| || format!("{reason} JWT secret for instance {}", instance_id);
     let entry = Entry::new(
-        format!("{}.{}", ARTILECT_INSTANCE_ID, KEYRING_SERVICE_NAME).as_str(),
-        JWT_SECRET_NAME,
+        format!("{}.{}", instance_id, KEYRING_SERVICE_NAME).as_str(),
+        secret_name,
     )
-    .expect("Invalid keyring name for JWT secret");
+    .with_context(context("Invalid keyring name for"))?;
     match entry.get_secret() {
-        Ok(secret) => Box::from(secret),
+        Ok(secret) => Ok(Arc::from(secret)),
         Err(err) => match err {
             keyring::Error::NoEntry => {
                 // Generate cryptographically secure random secret
@@ -39,19 +41,22 @@ static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
                 // Store it in keyring
                 entry
                     .set_secret(&secret)
-                    .expect("Failed to store JWT secret in keyring");
+                    .with_context(context("Failed to store"))?;
 
                 secret.into()
             }
-            _ => panic!("Failed to get secret from keyring: {}", err),
+            _ => Err(err).context(context("Failed to retrieve")()),
         },
     }
-});
+}
 
-static JWT_ENCODING_KEY: Lazy<EncodingKey> =
-    Lazy::new(|| EncodingKey::from_secret(JWT_SECRET.as_ref()));
-static JWT_DECODING_KEY: Lazy<DecodingKey> =
-    Lazy::new(|| DecodingKey::from_secret(JWT_SECRET.as_ref()));
+pub fn get_jwt_key_pair(instance_id: &str) -> Result<(EncodingKey, DecodingKey), anyhow::Error> {
+    let secret = get_secret(instance_id, JWT_SECRET_NAME)?;
+    Ok((
+        EncodingKey::from_secret(&secret),
+        DecodingKey::from_secret(&secret),
+    ))
+}
 
 static TOKEN_VALIDATION: Lazy<Validation> = Lazy::new(|| Validation::new(Algorithm::HS256));
 
@@ -74,7 +79,7 @@ pub trait JwtClaims: Clone + Serialize + DeserializeOwned + Send + Sync {
     type Payload: Clone + Send + Sync + 'static;
     fn new(payload: Self::Payload, exp: OffsetDateTime) -> Self;
     fn payload(&self) -> Self::Payload;
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken>;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken>;
 }
 
 // JWT Claims structure that matches your Identity enum
@@ -102,8 +107,8 @@ impl JwtClaims for JwtClaimsAccess {
         self.id
     }
 
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken> {
-        let token = encode(&jsonwebtoken::Header::default(), &self, &*JWT_ENCODING_KEY)?;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken> {
+        let token = encode(&jsonwebtoken::Header::default(), &self, encoding_key)?;
         Ok(GeneratedToken {
             token,
             exp: self.exp,
@@ -140,8 +145,8 @@ impl JwtClaims for JwtClaimsRefresh {
         SessionKey(self.ses.clone())
     }
 
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken> {
-        let token = encode(&jsonwebtoken::Header::default(), &self, &*JWT_ENCODING_KEY)?;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken> {
+        let token = encode(&jsonwebtoken::Header::default(), &self, encoding_key)?;
         Ok(GeneratedToken {
             token,
             exp: self.exp,
@@ -173,6 +178,7 @@ impl GeneratedToken {
 
 // Middleware to extract and validate JWT from cookie
 async fn jwt<Claims: JwtClaims>(
+    State(decoding_key): State<Arc<DecodingKey>>,
     jar: CookieJar,
     mut req: Request,
     next: Next,
@@ -183,8 +189,10 @@ async fn jwt<Claims: JwtClaims>(
             let token = cookie.value();
 
             // Decode and validate JWT
-            let token_data = decode::<Claims>(token, &*JWT_DECODING_KEY, &TOKEN_VALIDATION)
-                .map_err(|e| match e.kind() {
+            let token_data =
+                decode::<Claims>(token, &*decoding_key, &TOKEN_VALIDATION).map_err(|e| match e
+                    .kind()
+                {
                     jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                         UnauthorizedError::ExpiredToken
                     }
@@ -200,19 +208,19 @@ async fn jwt<Claims: JwtClaims>(
 }
 
 pub trait RouterAuth {
-    fn require_access_token(self) -> Self;
-    fn require_refresh_token(self) -> Self;
+    fn require_access_token(self, decoding_key: Arc<DecodingKey>) -> Self;
+    fn require_refresh_token(self, decoding_key: Arc<DecodingKey>) -> Self;
 }
 
 impl<T> RouterAuth for Router<T>
 where
     T: Clone + Send + Sync + 'static,
 {
-    fn require_access_token(self) -> Self {
-        self.layer(from_fn(jwt::<JwtClaimsAccess>))
+    fn require_access_token(self, decoding_key: Arc<DecodingKey>) -> Self {
+        self.layer(from_fn_with_state(decoding_key, jwt::<JwtClaimsAccess>))
     }
 
-    fn require_refresh_token(self) -> Self {
-        self.layer(from_fn(jwt::<JwtClaimsRefresh>))
+    fn require_refresh_token(self, decoding_key: Arc<DecodingKey>) -> Self {
+        self.layer(from_fn_with_state(decoding_key, jwt::<JwtClaimsRefresh>))
     }
 }

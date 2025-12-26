@@ -3,6 +3,7 @@ use std::{mem, sync::Arc};
 use anyhow::Context;
 use cookie_store::{self, CookieExpiration};
 use itertools::Itertools;
+use jsonwebtoken::EncodingKey;
 use keyring::Entry;
 use parking_lot::Mutex;
 use reqwest::header::HeaderValue;
@@ -65,6 +66,7 @@ enum ClientSecrets {
     PreceptCookie {
         precept_id: PreceptID,
         exp_duration: Duration,
+        encoding_key: Arc<EncodingKey>,
         cookie_header: Option<HeaderExpPair>,
     },
     #[cfg(feature = "native")]
@@ -94,10 +96,15 @@ struct KeyringSecretStorage {
 
 impl ClientSecrets {
     #[cfg(feature = "backend")]
-    fn default_precept(precept_id: PreceptID, exp_duration: Duration) -> Self {
+    fn default_precept(
+        precept_id: PreceptID,
+        exp_duration: Duration,
+        encoding_key: Arc<EncodingKey>,
+    ) -> Self {
         Self::PreceptCookie {
             precept_id,
             exp_duration,
+            encoding_key,
             cookie_header: None,
         }
     }
@@ -128,7 +135,7 @@ impl ClientSecrets {
             }
             Err(keyring::Error::NoEntry) => Self::default_user(base_url),
             Err(err) => {
-                Err(err).with_context(context).report_err(warnings_tx);
+                Err(err).context(context()).report_err(warnings_tx);
                 Self::default_user(base_url)
             }
         }
@@ -221,6 +228,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
             ClientSecrets::PreceptCookie {
                 ref precept_id,
                 ref exp_duration,
+                ref encoding_key,
                 ref mut cookie_header,
             } => match cookie_header {
                 Some(HeaderExpPair {
@@ -232,7 +240,7 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                     let header: Result<HeaderValue, anyhow::Error> = try {
                         use crate::auth::middleware::{JwtClaims, JwtClaimsAccess};
                         let token = JwtClaimsAccess::new(precept_id.into(), exp)
-                            .to_token()
+                            .to_token(&**encoding_key)
                             .context("Failed to generate precept access token")
                             .ok_or_report(&self.warnings_tx)?;
                         let cookie_header_str =
@@ -286,9 +294,10 @@ impl SecretProvider {
         warnings_tx: mpsc::Sender<anyhow::Error>,
         id: PreceptID,
         token_lifetime: Duration,
+        encoding_key: Arc<EncodingKey>,
     ) -> Result<Self, anyhow::Error> {
         Ok(Self {
-            secrets: Mutex::new(ClientSecrets::default_precept(id, token_lifetime)),
+            secrets: Mutex::new(ClientSecrets::default_precept(id, token_lifetime, encoding_key)),
             warnings_tx,
         })
     }
