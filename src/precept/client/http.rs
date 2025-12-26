@@ -16,7 +16,9 @@ use crate::auth::middleware::JwtClaims;
 use crate::{
     auth::dto::RefreshTokenApiResponse,
     precept,
-    precept::{Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID},
+    precept::{
+        Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID, UnauthorizedError,
+    },
     util::report_err::*,
 };
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
@@ -273,8 +275,9 @@ impl reqwest::cookie::CookieStore for SecretProvider {
 
 pub enum TokenStatus {
     Valid,
-    MustRefresh,
-    MustLogin,
+    MustRefresh { url: Url },
+    // MustRelogin { url: Url, primary_key_id }, @todo primary key
+    MustLogin { is_expired: bool },
 }
 
 impl SecretProvider {
@@ -301,12 +304,13 @@ impl SecretProvider {
         })
     }
 
-    pub fn should_refresh_token(&self) -> TokenStatus {
+    pub fn token_status(&self) -> TokenStatus {
         match &self.secrets.lock() {
             #[cfg(feature = "backend")]
             ClientSecrets::PreceptCookie { .. } => TokenStatus::Valid,
             #[cfg(feature = "native")]
             ClientSecrets::UserCookiesNative {
+                base_url,
                 access_token_exp,
                 refresh_token_exp,
                 ..
@@ -321,48 +325,27 @@ impl SecretProvider {
                 };
                 match (access_expired, refresh_expired) {
                     (false, _) => TokenStatus::Valid,
-                    (true, false) => TokenStatus::MustRefresh,
-                    (true, true) => TokenStatus::MustLogin,
+                    (true, false) => TokenStatus::MustRefresh {
+                        url: base_url.refresh_token.clone(),
+                    },
+                    (true, true) => TokenStatus::MustLogin {
+                        is_expired: refresh_token_exp.is_some(),
+                    },
                 }
             }
         }
     }
-}
 
-#[derive(Clone)]
-pub struct HttpClient {
-    client: reqwest::Client,
-    prefixed_url: Arc<str>,
-    secret_provider: Arc<SecretProvider>,
-}
-
-impl HttpClient {
-    pub fn new(base_url: Arc<str>, secret_provider: SecretProvider) -> Self {
-        let secret_provider = Arc::new(secret_provider);
-        let client = reqwest::Client::builder()
-            .cookie_provider(secret_provider.clone())
-            .build()
-            .unwrap();
-        Self {
-            client,
-            base_url,
-            secret_provider,
-        }
-    }
-
-    pub async fn refresh_token(&self) -> Result<(), super::Error> {
-        match &*self.secret_provider {
-            SecretProvider::PreceptCookie { .. } => Err(super::Error::NotImplemented),
-            SecretProvider::UserCookiesNative {
-                artilect_base_url, ..
-            } => {
+    pub async fn ensure_valid_token(&self, client: &reqwest::Client) -> precept::Result<()> {
+        match self.token_status() {
+            TokenStatus::Valid => Ok(()),
+            TokenStatus::MustRefresh { url } => {
                 #[allow(unused_variables)]
                 let RefreshTokenApiResponse {
                     access_token_exp,
                     refresh_token_exp,
-                } = self
-                    .client
-                    .post(format!("{}/auth/refresh", artilect_base_url))
+                } = client
+                    .post(url)
                     .send()
                     .await
                     .into_precept_result_t()
@@ -371,6 +354,34 @@ impl HttpClient {
                 todo!();
                 Ok(())
             }
+            TokenStatus::MustLogin { is_expired } => Err(if is_expired {
+                UnauthorizedError::ExpiredToken
+            } else {
+                UnauthorizedError::Missing
+            })
+            .into(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct HttpClient {
+    client: reqwest::Client,
+    prefixed_url: Arc<Url>,
+    secret_provider: Arc<SecretProvider>,
+}
+
+impl HttpClient {
+    pub fn new(prefixed_url: Arc<Url>, secret_provider: SecretProvider) -> Self {
+        let secret_provider = Arc::new(secret_provider);
+        let client = reqwest::Client::builder()
+            .cookie_provider(secret_provider.clone())
+            .build()
+            .unwrap();
+        Self {
+            client,
+            prefixed_url,
+            secret_provider,
         }
     }
 
@@ -379,11 +390,11 @@ impl HttpClient {
         S: precept::MessageRemoteStrategy,
         S::Response: DeserializeOwned,
     {
-        if self.secret_provider.should_refresh_token() {
-            self.refresh_token().await?;
-        }
-        let request = msg.into_request(&self.client, self.base_url.as_ref());
-        request
+        self.secret_provider
+            .ensure_valid_token(&self.client)
+            .await?;
+        msg.into_request(&self.client, &*self.prefixed_url)
+            .with_context(|| format!("Failed to build request for {}", std::any::type_name::<S>()))?
             .send()
             .await
             .into_precept_result_t::<S::Response>()
@@ -394,7 +405,7 @@ impl HttpClient {
 
 impl PartialEq for HttpClient {
     fn eq(&self, other: &Self) -> bool {
-        self.secret_provider == other.secret_provider
+        self.secret_provider == other.secret_provider && self.prefixed_url == other.prefixed_url
     }
 }
 
