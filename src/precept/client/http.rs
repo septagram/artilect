@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 
 use anyhow::Context;
-use cookie_store::CookieExpiration;
+use cookie_store::{CookieExpiration, CookieStore};
 use itertools::Itertools;
 use keyring::Entry;
 use parking_lot::Mutex;
@@ -20,6 +20,8 @@ use crate::{
     util::report_err::*,
 };
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
+//
+// ...to be fair, there's plenty of custom logic here...
 
 pub const KEYRING_SERVICE_NAME: &str = "artilect";
 
@@ -35,27 +37,31 @@ enum ClientSecrets {
         exp_duration: Duration,
         cookie_header: Option<HeaderExpPair>,
     },
-    #[cfg(any(feature = "desktop", feature = "mobile"))]
+    #[cfg(feature = "native")]
     UserCookiesNative {
-        artilect_base_url: Url,
+        base_url: Url,
         refresh_token_url: Url,
         cookies: cookie_store::CookieStore,
         access_token_exp: Option<CookieExpiration>,
-        // refresh_token_exp: Option<CookieExpiration>,
+        refresh_token_exp: Option<CookieExpiration>,
     },
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg(any(feature = "desktop", feature = "mobile"))]
-enum KeyringSecretStorage {
-    Cookies {
-        cookies: cookie_store::CookieStore,
-        #[serde(serialize_with = "serialize_expiration")]
-        access_token_exp: Option<CookieExpiration>,
-        #[serde(serialize_with = "serialize_expiration")]
-        refresh_token_exp: Option<CookieExpiration>,
-    },
+#[cfg(feature = "native")]
+struct KeyringSecretStorage {
+    cookies: cookie_store::CookieStore,
+    #[serde(serialize_with = "serialize_expiration")]
+    access_token_exp: Option<CookieExpiration>,
+    #[serde(serialize_with = "serialize_expiration")]
+    refresh_token_exp: Option<CookieExpiration>,
 }
+// @note: We serialize the expirations, because to infer them from the cookie store we need to match
+// against domain and path, which is a bit of a pain. In addition, later we may need to store the
+// public key and the primary key ID here as well.
+//
+// We could also just store the tokens instead of the cookie store, however, it's possible that
+// custom precepts may issue their own cookies, so we need to be able to handle that.
 
 impl ClientSecrets {
     #[cfg(feature = "backend")]
@@ -67,10 +73,10 @@ impl ClientSecrets {
         }
     }
 
-    #[cfg(any(feature = "desktop", feature = "mobile"))]
-    fn default_user(artilect_base_url: Url, refresh_token_url: Url) -> Self {
+    #[cfg(feature = "native")]
+    fn default_user(base_url: Url, refresh_token_url: Url) -> Self {
         Self::UserCookiesNative {
-            artilect_base_url,
+            base_url,
             refresh_token_url,
             cookies: cookie_store::CookieStore::new(),
             access_token_exp: None,
@@ -78,27 +84,30 @@ impl ClientSecrets {
         }
     }
 
-    #[cfg(any(feature = "desktop", feature = "mobile"))]
-    fn load(artilect_base_url: Url, refresh_token_url: Url) -> anyhow::Result<Self> {
-        match Entry::new(KEYRING_SERVICE_NAME, &*artilect_base_url)
-            .and_then(|entry| entry.get_secret())
-        {
-            Ok(secret) => match serde_json::from_slice::<KeyringSecretStorage>(&*secret)? {
-                #[cfg(any(feature = "desktop", feature = "mobile"))]
-                KeyringSecretStorage::Cookies {
-                    cookies,
-                    access_token_exp,
-                    refresh_token_exp,
-                } => Ok(Self::UserCookiesNative {
-                    artilect_base_url,
+    #[cfg(feature = "native")]
+    fn load_native(
+        warnings_tx: &sync::mpsc::Sender<anyhow::Error>,
+        base_url: Url,
+        refresh_token_url: Url,
+    ) -> Self {
+        let context = || format!("Failed to load secrets for {}", &base_url);
+        match Entry::new(KEYRING_SERVICE_NAME, &*base_url).and_then(|entry| entry.get_secret()) {
+            Ok(secret) => {
+                let kss = serde_json::from_slice::<KeyringSecretStorage>(&*secret)
+                    .with_context(context)?;
+                Self::UserCookiesNative {
+                    base_url,
                     refresh_token_url,
-                    cookies,
-                    access_token_exp,
-                    refresh_token_exp,
-                }),
-            },
-            Err(keyring::Error::NoEntry) => Ok(Self::default_user(artilect_base_url, refresh_token_url)),
-            Err(err) => Err(anyhow::anyhow!(err)),
+                    cookies: kss.cookies,
+                    access_token_exp: kss.access_token_exp,
+                    refresh_token_exp: kss.refresh_token_exp,
+                }
+            }
+            Err(keyring::Error::NoEntry) => Self::default_user(base_url, refresh_token_url),
+            Err(err) => {
+                Err(err).with_context(context).report_err(warnings_tx);
+                Self::default_user(base_url, refresh_token_url)
+            }
         }
     }
 }
@@ -122,9 +131,9 @@ impl reqwest::cookie::CookieStore for SecretProvider {
         match self.secrets.lock() {
             #[cfg(feature = "backend")]
             ClientSecrets::PreceptCookie { .. } => {} // Cookies cannot be modified for precepts.
-            #[cfg(any(feature = "desktop", feature = "mobile"))]
+            #[cfg(feature = "native")]
             ClientSecrets::UserCookiesNative {
-                ref artilect_base_url,
+                ref base_url,
                 ref mut cookies,
                 ref mut access_token_exp,
                 ref mut refresh_token_exp,
@@ -164,13 +173,19 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                     };
                 }
                 if has_changes {
+                    let kss = KeyringSecretStorage {
+                        cookies: mem::take(cookies), // to avoid cloning
+                        access_token_exp: access_token_exp.clone(),
+                        refresh_token_exp: refresh_token_exp.clone(),
+                    };
                     let saved: Result<(), anyhow::Error> = try {
                         let serialized_cookies =
-                            serde_json::to_vec(&cookies).with_context(save_cookie_err)?;
-                        Entry::new(KEYRING_SERVICE_NAME, artilect_base_url.as_str())
+                            serde_json::to_vec(&kss).with_context(save_cookie_err)?;
+                        Entry::new(KEYRING_SERVICE_NAME, base_url.as_str())
                             .and_then(|entry| entry.set_secret(&serialized_cookies))
                             .with_context(save_cookie_err)?
                     };
+                    *cookies = kss.cookies;
                     saved.unwrap_or_report(warnings_tx);
                 }
             }
@@ -213,7 +228,8 @@ impl reqwest::cookie::CookieStore for SecretProvider {
                     })
                 }
             },
-            #[cfg(any(feature = "desktop", feature = "mobile"))]
+
+            #[cfg(feature = "native")]
             ClientSecrets::UserCookiesNative { ref cookies, .. } => {
                 let all_cookies = cookies
                     .get_request_values(url)
@@ -234,93 +250,81 @@ impl reqwest::cookie::CookieStore for SecretProvider {
     }
 }
 
-impl SecretProvider {
-    #[cfg(feature = "backend")]
-    pub fn new_precept(id: PreceptID) -> Result<Self, anyhow::Error> {
-        let token = JwtClaimsAccess::new(
-            Identity::Precept {
-                id,
-                on_behalf_of: None,
-            },
-            UtcDateTime::MAX.to_offset(UtcOffset::UTC),
-        )
-        .to_token()
-        .context("Failed to generate precept access token")?;
-
-        let cookie_header_str = cookie::Cookie::new("at", &*token.token).to_string();
-        let mut cookie_header = HeaderValue::try_from(cookie_header_str)
-            .context("Failed to construct precept access token cookie header")?;
-        cookie_header.set_sensitive(true);
-        Ok(Self::PreceptCookie { cookie_header })
-    }
-
-    #[cfg(any(feature = "desktop", feature = "mobile"))]
-    pub fn new_user(
-        artilect_base_url: Url,
-        warnings_tx: sync::mpsc::Sender<anyhow::Error>,
-    ) -> Result<(Self, sync::mpsc::Receiver<anyhow::Error>), anyhow::Error> {
-        let secrets = get_current_cookies(&*artilect_base_url)
-            .ok_or_report(&warnings_tx)
-            .unwrap_or_else(|| ClientSecrets::UserCookiesNative {
-                cookies: cookie_store::CookieStore::new(),
-                access_token_exp: None,
-                refresh_token_exp: None,
-            });
-        let artilect_base_url = Url::parse(&*artilect_base_url)
-            .with_context(|| format!("Invalid URL: {}", artilect_base_url))?;
-        Ok((
-            Self {
-                artilect_base_url,
-                refresh_token_url: artilect_base_url.join("auth/refresh").with_context(|| {
-                    format!(
-                        "Failed to generate refresh token URL for {}",
-                        artilect_base_url
-                    )
-                })?,
-                secrets: Mutex::new(secrets),
-                warnings_tx,
-            },
-            warnings_rx,
-        ))
-    }
-
-    pub fn should_refresh_token(&self) -> bool {
-        match self {
-            #[cfg(feature = "backend")]
-            Self::PreceptCookie { .. } => false,
-            #[cfg(any(feature = "desktop", feature = "mobile"))]
-            Self::UserCookiesNative {
-                secrets: current_cookies,
-                ..
-            } => {
-                let lock = current_cookies.lock();
-                let access_expired = match &lock.access_token_exp {
-                    None => true,
-                    Some(exp) => exp.is_expired(),
-                };
-                let refresh_expired = match &lock.refresh_token_exp {
-                    None => true,
-                    Some(exp) => exp.is_expired(),
-                };
-                access_expired && !refresh_expired
-            }
-        }
-    }
+pub enum TokenStatus {
+    Valid,
+    MustRefresh,
+    MustLogin,
 }
 
-fn get_current_cookies(artilect_base_url: &str) -> anyhow::Result<ClientSecrets> {
-    match Entry::new(KEYRING_SERVICE_NAME, &*artilect_base_url).and_then(|entry| entry.get_secret())
-    {
-        Ok(secret) => Ok(serde_json::from_slice::<ClientSecrets>(&*secret)?),
-        Err(keyring::Error::NoEntry) => Ok(ClientSecrets::default()),
-        Err(err) => Err(anyhow::anyhow!(err)),
+impl SecretProvider {
+    #[cfg(feature = "backend")]
+    pub fn new_precept(
+        warnings_tx: sync::mpsc::Sender<anyhow::Error>,
+        id: PreceptID,
+        token_lifetime: Duration,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            secrets: Mutex::new(ClientSecrets::default_precept(id, token_lifetime)),
+            warnings_tx,
+        })
+    }
+
+    #[cfg(feature = "native")]
+    pub fn new_user(
+        warnings_tx: sync::mpsc::Sender<anyhow::Error>,
+        base_url: Url,
+        refresh_token_url: Option<Url>,
+    ) -> Result<Self, anyhow::Error> {
+        let refresh_token_url = refresh_token_url
+            .ok_or_else(|| base_url.join("auth/refresh"))
+            .with_context(|| {
+                format!(
+                    "Failed to generate refresh token URL for {}",
+                    base_url.as_str()
+                )
+            })?;
+        Ok(Self {
+            secrets: Mutex::new(ClientSecrets::load_native(
+                &warnings_tx,
+                base_url,
+                refresh_token_url,
+            )),
+            warnings_tx,
+        })
+    }
+
+    pub fn should_refresh_token(&self) -> TokenStatus {
+        match &self.secrets.lock() {
+            #[cfg(feature = "backend")]
+            ClientSecrets::PreceptCookie { .. } => TokenStatus::Valid,
+            #[cfg(feature = "native")]
+            ClientSecrets::UserCookiesNative {
+                access_token_exp,
+                refresh_token_exp,
+                ..
+            } => {
+                let access_expired = match access_token_exp {
+                    None => true,
+                    Some(exp) => exp.is_expired(),
+                };
+                let refresh_expired = match refresh_token_exp {
+                    None => true,
+                    Some(exp) => exp.is_expired(),
+                };
+                match (access_expired, refresh_expired) {
+                    (false, _) => TokenStatus::Valid,
+                    (true, false) => TokenStatus::MustRefresh,
+                    (true, true) => TokenStatus::MustLogin,
+                }
+            }
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct HttpClient {
     client: reqwest::Client,
-    base_url: Arc<str>,
+    prefixed_url: Arc<str>,
     secret_provider: Arc<SecretProvider>,
 }
 

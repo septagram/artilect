@@ -103,8 +103,9 @@ chat-front = ["frontend"]
 telegram-in = ["backend", "dep:teloxide"]
 telegram-out = ["client-http2"]
 
-desktop = ["dioxus/desktop", "dep:tao", "keyring-cookie-store"]
-mobile = ["dioxus/mobile", "keyring-cookie-store"]
+native = []
+desktop = ["dioxus/desktop", "dep:tao", "keyring-cookie-store", "native"]
+mobile = ["dioxus/mobile", "keyring-cookie-store", "native"]
 
 [dependencies]
 artilect-macro = { path = "macro" }
