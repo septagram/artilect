@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use cfg_block::cfg_block;
-use serde::de::DeserializeOwned;
 use derive_more::From;
-use crate::orchestra::{PlexusClientBase, PlexusClientConfig};
-use super::{Error, Identity, IntoPreceptSpecificResultTyped, Message, SignedMessage, UnauthorizedError};
+use serde::de::DeserializeOwned;
+
+use super::{
+    Error, Identity, IntoPreceptSpecificResultTyped, Message, SignedMessage, UnauthorizedError,
+};
+use crate::orchestra::PlexusClientBase;
 
 pub enum OnlyRemote {}
 
@@ -31,11 +34,11 @@ cfg_block! {
                 (Self { addr: addr.clone() }, addr)
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, _client: Option<HttpClient>) -> ClientLocal<T> {
-                ClientLocal::<T> {
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<ClientLocal<T>, crate::orchestra::Error> {
+                Ok(ClientLocal::<T> {
                     addr: self.addr.clone(),
-                    client_id: client_id.expect("Client ID must be set for local precepts"),
-                }
+                    client_id: client_base.local_identity.ok_or(crate::orchestra::Error::NoLocalIdentity)?,
+                })
             }
         }
 
@@ -119,10 +122,10 @@ cfg_block! {
                 Self { prefixed_url }
             }
 
-            pub fn to_client(&self, client_base: &PlexusClientBase) -> ClientRemote {
-                ClientRemote {
-                    client: HttpClient::new(self.prefixed_url, client_base)
-                }
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<ClientRemote, orchestra::Error> {
+                Ok(ClientRemote {
+                    client: HttpClient::new(self.prefixed_url, client_base)?,
+                })
             }
         }
 
@@ -157,15 +160,15 @@ cfg_block! {
                 (Self::Local(addr), set_addr)
             }
 
-            pub fn new_remote(base_url: Arc<str>) -> Self {
-                Self::Remote(AddrRemote::new(base_url))
+            pub fn new_remote(prefixed_url: Arc<url::Url>) -> Self {
+                Self::Remote(AddrRemote::new(prefixed_url))
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, client: Option<HttpClient>) -> Client<P> {
-                match self {
-                    Self::Local(addr) => Client::Local(addr.to_client(client_id, client)),
-                    Self::Remote(addr) => Client::Remote(addr.to_client(client_id, client)),
-                }
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<Client<P>, crate::orchestra::Error> {
+                Ok(match self {
+                    Self::Local(addr) => Client::Local(addr.to_client(client_base)?),
+                    Self::Remote(addr) => Client::Remote(addr.to_client(client_base)?),
+                })
             }
         }
 

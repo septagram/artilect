@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use artilect::{
-    orchestra::{Orchestra, use_address_book},
+    orchestra::{Orchestra, use_plexus_client},
     precepts::chat::{Addr, front::App},
 };
 use dioxus::{logger::tracing::Level, prelude::*};
@@ -29,7 +29,7 @@ fn main() {
                 base_url: Arc::from(BASE_URL),
                 chat: Addr::new(Arc::from(BASE_URL)),
             });
-            use_address_book(orchestra, None);
+            use_plexus_client(orchestra, None);
             rsx! {
                 App {}
             }

@@ -1,5 +1,5 @@
 use cfg_block::cfg_block;
-use crate::orchestra::AddressBook;
+use crate::orchestra::PlexusClient;
 use crate::precept::client::AddrLocal;
 use super::{Error, Message, PreceptID, SignedMessage};
 
@@ -18,7 +18,7 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
 
 pub trait PreceptConstructor: Precept {
     type Config;
-    fn new(address_book: AddressBook, config: Self::Config) -> Result<Self, anyhow::Error>;
+    fn new(plexus_client: PlexusClient, config: Self::Config) -> Result<Self, anyhow::Error>;
     fn id(config: &Self::Config) -> PreceptID;
 }
 

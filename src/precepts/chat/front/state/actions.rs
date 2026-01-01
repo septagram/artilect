@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{State, SyncState, consume_sync_update_batch};
 use crate::{
-    orchestra::AddressBook,
+    orchestra::PlexusClient,
     precepts::chat::{
         Client,
         dto::{
@@ -32,7 +32,7 @@ where
 }
 
 pub fn use_app_actions() {
-    let api = use_context::<Signal<AddressBook>>();
+    let api = use_context::<Signal<PlexusClient>>();
     let chat_api = use_memo(move || api.read().chat.clone());
     use_action(chat_api, &handle_fetch_user_threads);
     use_action(chat_api, &handle_fetch_thread);

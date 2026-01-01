@@ -10,7 +10,8 @@
       "WebFetch(domain:docs.rs)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(caddy validate:*)"
+      "Bash(caddy validate:*)",
+      "Bash(just auth build:*)"
     ],
     "deny": [],
     "ask": []

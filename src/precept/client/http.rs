@@ -16,14 +16,13 @@ use url::Url;
 use crate::auth::middleware::JwtClaims;
 use crate::{
     auth::dto::RefreshTokenApiResponse,
-    orchestra::BaseUrl,
+    orchestra::{BaseUrl, PlexusClientBase, PlexusClientBaseRemote},
     precept,
     precept::{
         Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID, UnauthorizedError,
     },
     util::report_err::*,
 };
-use crate::orchestra::PlexusClientBase;
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
 //
 // ...to be fair, there's plenty of custom logic here...
@@ -259,7 +258,7 @@ pub enum TokenStatus {
     Valid,
     MustRefresh { url: Url },
     // MustRelogin { url: Url, primary_key_id }, @todo primary key
-    MustLogin { is_expired: bool },
+    MustLogin { is_expired: bool, url: Url },
 }
 
 impl SecretProvider {
@@ -317,6 +316,7 @@ impl SecretProvider {
                     },
                     (true, true) => TokenStatus::MustLogin {
                         is_expired: refresh_token_exp.is_some(),
+                        url: base_url.login.clone(),
                     },
                 }
             }
@@ -341,7 +341,7 @@ impl SecretProvider {
                 todo!();
                 Ok(())
             }
-            TokenStatus::MustLogin { is_expired } => Err(if is_expired {
+            TokenStatus::MustLogin { is_expired, url: _ } => Err(if is_expired {
                 UnauthorizedError::ExpiredToken
             } else {
                 UnauthorizedError::Missing
@@ -359,17 +359,22 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub fn new(prefixed_url: Arc<Url>, client_base: PlexusClientBase) -> Result<Self> {
-        let secret_provider = Arc::new(secret_provider);
-        let client = reqwest::Client::builder()
-            .cookie_provider(secret_provider.clone())
-            .build()
-            .unwrap();
-        Self {
-            client,
+    pub fn new(
+        prefixed_url: Arc<Url>,
+        client_base: &PlexusClientBase,
+    ) -> Result<Self, crate::orchestra::Error> {
+        let Some(PlexusClientBaseRemote {
+            secret_provider,
+            reqwest_client,
+        }) = client_base.remote
+        else {
+            return crate::orchestra::Error::NoSecretProvider.into();
+        };
+        Ok(Self {
+            client: reqwest_client,
             prefixed_url,
             secret_provider,
-        }
+        })
     }
 
     pub async fn send<S>(&self, msg: S) -> precept::Result<S::Response>
@@ -387,7 +392,7 @@ impl HttpClient {
             .into_precept_result_t::<S::Response>()
             .await
     }
-    // @todo: consume login/refresh payload
+    // @todo: consume login/refresh payload (web only)
 }
 
 impl PartialEq for HttpClient {

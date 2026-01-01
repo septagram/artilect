@@ -34,7 +34,7 @@ use crate::{
             get_jwt_key_pair,
         },
     },
-    orchestra::AddressBook,
+    orchestra::PlexusClient,
     precept,
     precept::{
         ActixResult, Identity, IntoPreceptResult, MessageLocalStrategy, PreceptConstructor,
@@ -170,7 +170,7 @@ pub struct StoredConfig {
 }
 
 pub struct Resources {
-    address_book: AddressBook,
+    plexus: PlexusClient,
     login_attempts_map: DashMap<u128, LoginAttempt>,
     login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
     login_attempts_timeout: Duration,
@@ -205,7 +205,7 @@ impl actix::Actor for Precept {
 
 impl PreceptConstructor for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Result<Self, anyhow::Error> {
+    fn new(plexus_client: PlexusClient, config: Config) -> Result<Self, anyhow::Error> {
         let Config {
             max_concurrent_login_attempts,
             login_attempts_timeout_min,
@@ -222,7 +222,7 @@ impl PreceptConstructor for Precept {
         }
         let (encoding_key, decoding_key) = get_jwt_key_pair(&*rest.instance_id)?;
         let resources = Arc::new(Resources {
-            address_book,
+            plexus: plexus_client,
             login_attempts_map: DashMap::new(),
             login_attempts_expiry_queue: expire_tx,
             login_attempts_timeout: Duration::minutes(login_attempts_timeout_min.into()),

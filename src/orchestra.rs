@@ -18,13 +18,14 @@ use crate::{
     precept::{self, Identity, Precept, PreceptConstructor},
     precepts,
 };
+use crate::precept::client::SecretProvider;
 
 cfg_block! {
     #[cfg(feature = "client-http2")] {
         pub struct BaseUrl {
-            base: url::Url,
-            refresh_token: url::Url,
-            login: url::Url,
+            pub base: url::Url,
+            pub refresh_token: url::Url,
+            pub login: url::Url,
         }
 
         impl BaseUrl {
@@ -91,7 +92,7 @@ struct OrchestraBuilder {
 }
 
 #[derive(Error, Debug)]
-enum Error {
+pub enum Error {
     #[error("No base URL provided or base URL already taken")]
     NoBaseUrl,
     #[error("Missing precept")]
@@ -102,6 +103,12 @@ enum Error {
     NoPreceptsToExpose,
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
+    #[cfg(feature = "backend")]
+    #[error("Missing local identity in PlexusClientBase")]
+    NoLocalIdentity,
+    #[cfg(feature = "client-http2")]
+    #[error("Missing secret provider in PlexusClientBase")]
+    NoSecretProvider,
 }
 
 impl OrchestraBuilder {
@@ -193,7 +200,7 @@ impl OrchestraBuilder {
             .ok_or(Error::NoPrecept)
     }
 
-    pub fn build(self) -> Result<Orchestra, Error> {
+    pub fn build(self) -> Result<Plexus, Error> {
         self.into()
     }
 }
@@ -296,9 +303,13 @@ pub struct PlexusClientBase {
     #[cfg(feature = "backend")]
     pub local_identity: Option<Identity>,
     #[cfg(feature = "client-http2")]
-    pub secret_provider: Option<Arc<precept::client::SecretProvider>>,
-    #[cfg(feature = "client-http2")]
-    pub reqwest_client: Option<reqwest::Client>,
+    pub remote: Option<PlexusClientBaseRemote>,
+}
+
+#[cfg(feature = "client-http2")]
+pub struct PlexusClientBaseRemote {
+    pub secret_provider: Arc<precept::client::SecretProvider>,
+    pub reqwest_client: reqwest::Client,
 }
 
 #[bon]
@@ -311,22 +322,53 @@ impl PlexusClientBase {
         >,
     ) -> Self {
         #[cfg(feature = "client-http2")]
-        let reqwest_client = secret_provider.as_ref().map(|secret_provider| {
-            reqwest::Client::builder()
+        let remote = secret_provider.map(|secret_provider| PlexusClientBaseRemote {
+            secret_provider: secret_provider.clone(),
+            reqwest_client: reqwest::Client::builder()
                 .cookie_provider(secret_provider.clone())
                 .build()
-                .unwrap()
+                .unwrap(),
         });
         Self {
             #[cfg(feature = "backend")]
             local_identity,
             #[cfg(feature = "client-http2")]
-            secret_provider,
-            #[cfg(feature = "client-http2")]
-            reqwest_client,
+            remote,
         }
     }
 }
+
+// #[cfg(feature = "backend")]
+// pub struct PlexusLocalClientBase {
+//     pub local_identity: Identity,
+// }
+//
+// #[cfg(feature = "backend")]
+// impl TryFrom<PlexusClientBase> for PlexusLocalClientBase {
+//     type Error = Error;
+//     fn try_from(base: PlexusClientBase) -> Result<Self, Self::Error> {
+//         Ok(Self {
+//             local_identity: base.local_identity.ok_or(Error::NoLocalIdentity)?,
+//         })
+//     }
+// }
+//
+// #[cfg(feature = "client-http2")]
+// pub struct PlexusRemoteClientBase {
+//     pub secret_provider: Arc<precept::client::SecretProvider>,
+//     pub reqwest_client: reqwest::Client,
+// }
+//
+// #[cfg(feature = "client-http2")]
+// impl TryFrom<PlexusClientBase> for PlexusRemoteClientBase {
+//     type Error = Error;
+//     fn try_from(base: PlexusClientBase) -> Result<Self, Self::Error> {
+//         Ok(Self {
+//             secret_provider: base.secret_provider.ok_or(Error::NoSecretProvider)?,
+//             reqwest_client: base.reqwest_client.ok_or(Error::NoSecretProvider)?,
+//         })
+//     }
+// }
 
 // trait OrchestraBuilderExt {
 //     #[cfg(feature = "client-http2")]
@@ -341,8 +383,9 @@ impl PlexusClientBase {
 
 // trait OrchestraBuilderSetPrecept: OrchestraBuilderExt {}
 //
-// #[derive(OrchestraExt)]
-struct Orchestra {
+// #[derive(PlexusClient)]
+
+struct Plexus {
     base: PlexusBase,
     #[cfg(feature = "auth")]
     auth: precepts::auth::Addr,
@@ -352,7 +395,7 @@ struct Orchestra {
     telegram: precepts::telegram::Addr,
 }
 
-impl TryFrom<OrchestraBuilder> for Orchestra {
+impl TryFrom<OrchestraBuilder> for Plexus {
     type Error = Error;
     fn try_from(mut builder: OrchestraBuilder) -> Result<Self, Error> {
         Self {
@@ -368,6 +411,30 @@ impl TryFrom<OrchestraBuilder> for Orchestra {
     }
 }
 
+pub struct PlexusClient {
+    base: PlexusClientBase,
+    #[cfg(feature = "auth")]
+    auth: precepts::auth::Client,
+    #[cfg(feature = "chat")]
+    chat: precepts::chat::Client,
+    #[cfg(feature = "telegram")]
+    telegram: precepts::telegram::Client,
+}
+
+impl Plexus {
+    pub fn to_client(&self, client_base: PlexusClientBase) -> Result<PlexusClient, Error> {
+        Ok(PlexusClient {
+            #[cfg(feature = "auth")]
+            auth: self.auth.to_client(&client_base)?,
+            #[cfg(feature = "chat")]
+            chat: self.chat.to_client(&client_base)?,
+            #[cfg(feature = "telegram")]
+            telegram: self.telegram.to_client(&client_base)?,
+            base: client_base,
+        })
+    }
+}
+
 // orchestra_from_precepts! {
 //     auth: auth,
 //     chat: chat,
@@ -379,11 +446,11 @@ cfg_block! {
     #[cfg(feature = "frontend")] {
         use dioxus::prelude::*;
 
-        pub fn use_address_book(orchestra: Arc<Orchestra>, identity: Option<Identity>) {
-            let mut address_book = use_context_provider(|| Signal::new(orchestra.to_address_book(identity.clone())));
-            use_effect(use_reactive!(|orchestra, identity| {
-                let mut write = address_book.write();
-                *write = orchestra.to_address_book(identity);
+        pub fn use_plexus_client(plexus: &Plexus, secret_provider: Arc<SecretProvider>) {
+            let mut plexus_client = use_context_provider(|| Signal::new(plexus.to_address_book(identity.clone())));
+            use_effect(use_reactive!(|plexus, secret_provider| {
+                let mut write = plexus_client.write();
+                *write = plexus.to_client(identity);
             }));
         }
     }

@@ -20,7 +20,7 @@ use super::dto::{
 use crate::{
     auth::User,
     infer::{self, PlainText, RootChain},
-    orchestra::AddressBook,
+    orchestra::PlexusClient,
     precept::{
         self, IntoPreceptResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID,
         SignedMessage,
@@ -70,7 +70,7 @@ pub struct Config {
 }
 
 pub struct Resources {
-    pub address_book: AddressBook,
+    pub plexus: PlexusClient,
     pub pool: PgPool,
     pub self_user: User,
     pub system_prompt: RootChain,
@@ -83,7 +83,7 @@ pub struct Precept {
 
 impl PreceptConstructor for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Self {
+    fn new(plexus_client: PlexusClient, config: Config) -> Self {
         let Config {
             pool,
             self_user,
@@ -91,7 +91,7 @@ impl PreceptConstructor for Precept {
         } = config;
         Self {
             resources: Arc::new(Resources {
-                address_book,
+                plexus: plexus_client,
                 pool,
                 self_user,
                 system_prompt,

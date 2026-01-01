@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::{
     auth,
     auth::dto::{AuthProvider, ConfirmLoginRequest, InvalidateLoginRequest},
-    orchestra::AddressBook,
+    orchestra::PlexusClient,
     precept,
     precept::{
         Identity, MessageLocalStrategy, PreceptConstructor, PreceptID, SignedMessage,
@@ -38,7 +38,7 @@ pub struct Config {
 
 pub struct Resources {
     bot: DefaultParseMode<Bot>,
-    address_book: AddressBook,
+    plexus: PlexusClient,
 }
 
 type CommandReceivedResponse = ();
@@ -54,10 +54,10 @@ enum Command {
 
 impl PreceptConstructor for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Self {
+    fn new(plexus: PlexusClient, config: Config) -> Self {
         let bot = Bot::new(config.bot_token.as_ref()).parse_mode(tg::ParseMode::MarkdownV2);
         Self {
-            resources: Arc::new(Resources { address_book, bot }),
+            resources: Arc::new(Resources { plexus, bot }),
             task_handle: None,
         }
     }
@@ -200,7 +200,7 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                         Ok(code),
                     ) => {
                         let user = resources
-                            .address_book
+                            .plexus
                             .auth
                             .send(ConfirmLoginRequest {
                                 code,
@@ -221,7 +221,7 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                     }
                     (PrivateChatWithUser::NoPrivateChat, Ok(code)) => {
                         let invalidate_result = resources
-                            .address_book
+                            .plexus
                             .auth
                             .send(InvalidateLoginRequest { code })
                             .await;
