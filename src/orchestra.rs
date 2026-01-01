@@ -198,7 +198,7 @@ impl OrchestraBuilder {
     }
 }
 
-trait SetupAddr {
+trait SetupAddr: Sized {
     fn from_local(builder: &mut OrchestraBuilder) -> Result<Option<Self>, anyhow::Error> {
         Ok(None)
     }
