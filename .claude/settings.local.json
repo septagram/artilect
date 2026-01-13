@@ -12,7 +12,10 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(caddy validate:*)",
       "Bash(just auth build:*)",
-      "Skill(rust-preferences)"
+      "Skill(rust-preferences)",
+      "Bash(jj status:*)",
+      "Bash(jj log:*)",
+      "Bash(jj commit:*)"
     ],
     "deny": [],
     "ask": []

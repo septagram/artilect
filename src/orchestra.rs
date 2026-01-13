@@ -1,21 +1,14 @@
-use std::{
-    any::TypeId,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{any::TypeId, collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use anymap3::AnyMap;
 use bon::bon;
 use cfg_block::cfg_block;
-use itertools::Itertools;
 use thiserror::Error;
-use tokio::sync::{SetOnce, mpsc};
 use url::Url;
 
 use crate::{
-    precept::{self, Identity, Precept, PreceptConstructor},
+    precept::{self, Identity, Precept, PreceptConstructor, PreceptID},
     precepts,
 };
 
@@ -65,14 +58,15 @@ impl Default for ExposedRouters {
     }
 }
 
+#[cfg(feature = "backend")]
+type InitCallback = Box<dyn FnOnce(&mut Plexus) -> Result<(), Error>>;
+
 #[derive(Default)]
 struct PlexusBuilder {
     #[cfg(feature = "backend")]
     l_precepts: AnyMap,
     #[cfg(feature = "backend")]
-    l_init_callbacks: Vec<Box<dyn FnOnce(&PlexusClient)>>, // + Send + Sync>>,
-    // typed by plexus client?
-    // or use l_precepts to store them, and keep here typeIds?
+    l_init_callbacks: Vec<InitCallback>,
 
     #[cfg(feature = "server-http2")]
     s_last: Option<TypeId>,
@@ -105,6 +99,9 @@ pub enum Error {
     #[cfg(feature = "client-http2")]
     #[error("Missing secret provider in PlexusClientBase")]
     NoSecretProvider,
+    #[cfg(feature = "backend")]
+    #[error("Failed to initialize precept: {0:?}")]
+    PreceptInitFailed(PreceptID),
 }
 
 impl PlexusBuilder {
@@ -132,16 +129,67 @@ impl PlexusBuilder {
         &mut self,
         config: T::Config,
     ) -> Result<&mut Self, Error> {
-        pub use precept::client::AddrLocal;
-        self.l_precepts.insert(config);
-        // let (tx, rx) = mpsc::channel::<T::Message>(128);
-        // self.local_precepts.insert(tx);
-        // self.local_precepts.insert(rx);
-        // ^ if removing Actix
-        let (addr, set_addr) = AddrLocal::<T>::new();
+        use precept::client::AddrLocal;
+
+        let (addr, setter) = AddrLocal::<T>::new();
         self.l_precepts.insert(addr);
-        self.l_precepts.insert(set_addr);
-        self.s_last = Some(TypeId::of::<T>());
+
+        // Capture expose info for router setup
+        #[cfg(feature = "server-http2")]
+        let expose_at = match &self.s_exposed_routers {
+            ExposedRouters::None => None,
+            ExposedRouters::Single(precept_type) if *precept_type == TypeId::of::<T>() => Some(None),
+            ExposedRouters::Multiple(exposed_routers) => exposed_routers
+                .get(&TypeId::of::<T>())
+                .map(|prefix| Some(prefix.clone())),
+            ExposedRouters::Single(_) => None, // Different precept type exposed
+        };
+
+        self.l_init_callbacks.push(Box::new(move |plexus| {
+            #[cfg(feature = "server-http2")]
+            use precept::local::Routable;
+
+            let precept_id = T::id(&config);
+
+            // 1. Create precept (reborrow as shared for injector)
+            let precept = {
+                let base = PlexusClientBase::builder()
+                    .local_identity(Some(Identity::Precept(precept_id)))
+                    .build();
+                let injector = Injector::new(&*plexus, base);
+                T::new(&injector, config)?
+            };
+
+            // 2. Build router from precept BEFORE starting (some routes need precept ref)
+            #[cfg(feature = "server-http2")]
+            let router_from_precept = expose_at.as_ref().map(|_| T::build_router(&precept));
+
+            // 3. Start precept (consumes it)
+            let actix_addr = precept.start();
+
+            // 4. Set address
+            setter.set(actix_addr.clone()).map_err(|_| {
+                Error::PreceptInitFailed(precept_id)
+            })?;
+
+            // 5. Router setup (if exposed)
+            #[cfg(feature = "server-http2")]
+            if let Some(prefix) = expose_at {
+                let mut router = router_from_precept.unwrap_or_default();
+                router = router.merge(T::build_router(&actix_addr));
+                match prefix {
+                    None => plexus.base.router = router,
+                    Some(prefix) => plexus.base.router = std::mem::take(&mut plexus.base.router).nest(&prefix, router),
+                }
+            }
+
+            Ok(())
+        }));
+
+        #[cfg(feature = "server-http2")]
+        {
+            self.s_last = Some(TypeId::of::<T>());
+        }
         Ok(self)
     }
 
@@ -195,8 +243,18 @@ impl PlexusBuilder {
             .ok_or(Error::NoPrecept)
     }
 
-    pub fn build(self) -> Result<Plexus, Error> {
-        self.try_into()
+    pub fn build(mut self) -> Result<Plexus, Error> {
+        #[cfg(feature = "backend")]
+        let callbacks = std::mem::take(&mut self.l_init_callbacks);
+        let mut plexus: Plexus = self.try_into()?;
+
+        // Run all init callbacks now that Plexus is constructed
+        #[cfg(feature = "backend")]
+        for callback in callbacks {
+            callback(&mut plexus)?;
+        }
+
+        Ok(plexus)
     }
 }
 
@@ -213,7 +271,7 @@ trait SetupAddr: Sized {
 #[cfg(feature = "backend")]
 impl<T: PreceptConstructor> SetupAddr for precept::client::AddrLocal<T> {
     fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
-        addr_from_local_precept::<T>(builder)
+        Ok(builder.l_precepts.remove::<Self>())
     }
 }
 
@@ -227,64 +285,12 @@ impl SetupAddr for precept::client::AddrRemote {
 #[cfg(all(feature = "backend", feature = "client-http2"))]
 impl<T: PreceptConstructor> SetupAddr for precept::client::Addr<T> {
     fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
-        addr_from_local_precept::<T>(builder).into()
+        Ok(builder.l_precepts.remove::<precept::client::AddrLocal<T>>().map(Into::into))
     }
 
     fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
-        builder.r_precept_addrs.remove(name).into()
+        builder.r_precept_addrs.remove(name).map(Into::into)
     }
-}
-
-#[cfg(feature = "backend")]
-fn addr_from_local_precept<T: PreceptConstructor>(
-    builder: &mut PlexusBuilder,
-) -> Result<Option<precept::client::AddrLocal<T>>, anyhow::Error> {
-    #[cfg(feature = "server-http2")]
-    use precept::local::Routable;
-
-    let Some(config) = builder.l_precepts.remove::<T::Config>() else {
-        return Ok(None);
-    };
-    let precept = T::new(plexus_client, config);
-    let expose_at = match builder.s_exposed_routers {
-        ExposedRouters::None => None,
-        ExposedRouters::Single(precept_type) if precept_type == TypeId::of::<T>() => Some(None),
-        ExposedRouters::Multiple(mut exposed_routers) => exposed_routers
-            .remove(&TypeId::of::<T>())
-            .map(|prefix| Some(prefix)),
-        _ => None,
-    };
-    #[cfg(feature = "server-http2")]
-    let mut router = (&expose_at)
-        .map(|_| T::build_router(&precept))
-        .unwrap_or_default();
-    let actix_addr = precept.start();
-    #[cfg(feature = "server-http2")]
-    if let Some(prefix) = expose_at {
-        router = router.merge(T::build_router(&actix_addr));
-        match prefix {
-            None => *builder.s_router.as_mut().ok_or(Error::NoRouter)? = router,
-            Some(prefix) => {
-                *builder
-                    .s_router
-                    .as_mut()
-                    .ok_or(Error::NoRouter)
-                    .nest(&*prefix, router);
-            }
-        }
-    }
-    let err = |s: &'static str| || anyhow::anyhow!(s);
-    builder
-        .l_precepts
-        .remove::<Arc<SetOnce<actix::Addr<T>>>>()
-        .ok_or_else(err("Failed to get local precept Actix address setter"))?
-        .set(actix_addr)
-        .ok_or_else(err("Failed to set local precept address"))?;
-    let addr = builder
-        .l_precepts
-        .remove::<T::AddrLocal>()
-        .ok_or_else(err("Failed to get local precept address"))?;
-    Some(addr.into())
 }
 
 struct PlexusBase {
@@ -370,18 +376,18 @@ impl TryFrom<PlexusBuilder> for Plexus {
 }
 
 impl Plexus {
-    pub fn to_injector(self, base: PlexusClientBase) -> Injector {
+    pub fn to_injector(&self, base: PlexusClientBase) -> Injector<'_> {
         Injector::new(self, base)
     }
 }
 
-pub struct Injector {
-    pub base: PlexusClientBase,
-    plexus: Plexus,
+pub struct Injector<'a> {
+    base: PlexusClientBase,
+    plexus: &'a Plexus,
 }
 
-impl Injector {
-    pub fn new(plexus: Plexus, base: PlexusClientBase) -> Self {
+impl<'a> Injector<'a> {
+    fn new(plexus: &'a Plexus, base: PlexusClientBase) -> Self {
         Self { base, plexus }
     }
 

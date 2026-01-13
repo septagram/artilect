@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Artilect is a modular AI agent framework inspired by "Symphony of Thought" by David Shapiro. It implements a precept-based architecture where services (precepts) communicate via a message-passing system. The project is in early development and aims to build sophisticated AI agents with dynamic task management and external system interaction.
 
+## Version Control
+
+This repository uses **jj (Jujutsu)** as its version control system, not git. Use `jj` commands instead of `git`:
+
+```bash
+jj status      # instead of git status
+jj diff        # instead of git diff
+jj commit      # instead of git commit (note: jj commit works differently)
+jj log         # instead of git log
+```
+
 ## Build System & Commands
 
 ### Building Binaries
