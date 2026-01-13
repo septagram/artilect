@@ -61,8 +61,8 @@ pub mod report_err {
     }
 }
 
-pub fn slugify<T: From<&str>>(s: &str) -> T {
+pub fn slugify<T: From<String>>(s: &str) -> T {
     let s = s.to_lowercase();
     let re = Regex::new(r"[^\w\d]+").unwrap();
-    T::from(re.replace_all(&s, "-").trim_matches('-'))
+    T::from(re.replace_all(&s, "-").into_owned())
 }

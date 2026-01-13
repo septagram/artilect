@@ -9,6 +9,8 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     const NAME: &'static str;
     type Addr;
     type AddrLocal;
+    type Client;
+    type ClientLocal;
     type Resources;
     type State;
     // #[cfg(feature = "server-http2")]

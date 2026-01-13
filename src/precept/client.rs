@@ -78,6 +78,8 @@ cfg_block! {
             }
         }
 
+        impl <T: actix::Actor> Eq for ClientLocal<T> {}
+
         impl<T: actix::Actor> PartialEq for ClientLocal<T> {
             fn eq(&self, other: &Self) -> bool {
                 self.addr == other.addr && self.client_id == other.client_id
@@ -109,7 +111,7 @@ cfg_block! {
 
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
-        pub use super::secret_provider::HttpClient;
+        use crate::orchestra::PlexusClientBaseRemote;
         pub use super::secret_provider::SecretProvider;
 
         #[derive(Clone, PartialEq)]
@@ -163,6 +165,8 @@ cfg_block! {
             }
         }
 
+        impl Eq for ClientRemote {}
+
         impl PartialEq for ClientRemote {
             fn eq(&self, other: &Self) -> bool {
                 self.secret_provider == other.secret_provider && self.prefixed_url == other.prefixed_url
@@ -196,7 +200,7 @@ cfg_block! {
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone, PartialEq, Eq)]
         pub enum Client<P: actix::Actor> {
             Local(ClientLocal<P>),
             Remote(ClientRemote),

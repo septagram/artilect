@@ -184,11 +184,11 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         #router_impl
 
         impl crate::precept::Precept for #struct_name {
-            const NAME = #precept_name_str;
+            const NAME: &'static str = #precept_name_str;
 
             type AddrLocal = crate::precept::client::AddrLocal<Self>;
             #[cfg(not(feature = #feature_out))]
-            type Addr = crate::precept::client::LocalAddr<Self>;
+            type Addr = crate::precept::client::AddrLocal<Self>;
             #[cfg(feature = #feature_out)]
             type Addr = crate::precept::client::Addr<Self>;
 

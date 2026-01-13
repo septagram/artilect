@@ -18,7 +18,6 @@ use crate::{
     precept::{self, Identity, Precept, PreceptConstructor},
     precepts,
 };
-use crate::precept::client::SecretProvider;
 
 cfg_block! {
     #[cfg(feature = "client-http2")] {
@@ -67,9 +66,13 @@ impl Default for ExposedRouters {
 }
 
 #[derive(Default)]
-struct OrchestraBuilder {
+struct PlexusBuilder {
     #[cfg(feature = "backend")]
     l_precepts: AnyMap,
+    #[cfg(feature = "backend")]
+    l_init_callbacks: Vec<Box<dyn FnOnce(&PlexusClient)>>, // + Send + Sync>>,
+    // typed by plexus client?
+    // or use l_precepts to store them, and keep here typeIds?
 
     #[cfg(feature = "server-http2")]
     s_last: Option<TypeId>,
@@ -104,7 +107,7 @@ pub enum Error {
     NoSecretProvider,
 }
 
-impl OrchestraBuilder {
+impl PlexusBuilder {
     pub fn new() -> Self {
         Self::default()
     }
@@ -116,13 +119,12 @@ impl OrchestraBuilder {
     }
 
     pub fn take_base(&mut self) -> Result<PlexusBase, Error> {
-        PlexusBase {
+        Ok(PlexusBase {
             #[cfg(feature = "client-http2")]
             base_url: self.r_base_url.take().ok_or(Error::NoBaseUrl)?,
             #[cfg(feature = "server-http2")]
             router: self.s_router.take().ok_or(Error::NoRouter)?,
-        }
-        .into()
+        })
     }
 
     #[cfg(feature = "backend")]
@@ -152,7 +154,7 @@ impl OrchestraBuilder {
             }
             _ => {
                 let mut precepts = HashMap::new();
-                precepts.insert(prefix, last);
+                precepts.insert(last, prefix);
                 self.s_exposed_routers = ExposedRouters::Multiple(precepts);
             }
         };
@@ -189,61 +191,61 @@ impl OrchestraBuilder {
 
     fn take<T: SetupAddr>(&mut self, name: &'static str) -> Result<T, Error> {
         T::from_local(self)?
-            .ok_or_else(|| T::from_remote(self, name))
+            .or_else(|| T::from_remote(self, name))
             .ok_or(Error::NoPrecept)
     }
 
     pub fn build(self) -> Result<Plexus, Error> {
-        self.into()
+        self.try_into()
     }
 }
 
 trait SetupAddr: Sized {
-    fn from_local(builder: &mut OrchestraBuilder) -> Result<Option<Self>, anyhow::Error> {
+    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
         Ok(None)
     }
 
-    fn from_remote(builder: &mut OrchestraBuilder, name: &'static str) -> Option<Self> {
+    fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
         None
     }
 }
 
 #[cfg(feature = "backend")]
 impl<T: PreceptConstructor> SetupAddr for precept::client::AddrLocal<T> {
-    fn from_local(builder: &mut OrchestraBuilder) -> Result<Option<Self>, anyhow::Error> {
-        addr_from_local_precept(builder)
+    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
+        addr_from_local_precept::<T>(builder)
     }
 }
 
 #[cfg(feature = "client-http2")]
 impl SetupAddr for precept::client::AddrRemote {
-    fn from_remote(builder: &mut OrchestraBuilder, name: &'static str) -> Option<Self> {
+    fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
         builder.r_precept_addrs.remove(name)
     }
 }
 
 #[cfg(all(feature = "backend", feature = "client-http2"))]
 impl<T: PreceptConstructor> SetupAddr for precept::client::Addr<T> {
-    fn from_local(builder: &mut OrchestraBuilder) -> Result<Option<Self>, anyhow::Error> {
-        addr_from_local_precept(builder).into()
+    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
+        addr_from_local_precept::<T>(builder).into()
     }
 
-    fn from_remote(builder: &mut OrchestraBuilder, name: &'static str) -> Option<Self> {
+    fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
         builder.r_precept_addrs.remove(name).into()
     }
 }
 
 #[cfg(feature = "backend")]
 fn addr_from_local_precept<T: PreceptConstructor>(
-    builder: &mut OrchestraBuilder,
-) -> Result<Option<T::Addr>, anyhow::Error> {
-    use precept::client::AddrLocal;
+    builder: &mut PlexusBuilder,
+) -> Result<Option<precept::client::AddrLocal<T>>, anyhow::Error> {
     #[cfg(feature = "server-http2")]
     use precept::local::Routable;
 
-    let Some(precept) = builder.l_precepts.remove::<T>() else {
+    let Some(config) = builder.l_precepts.remove::<T::Config>() else {
         return Ok(None);
     };
+    let precept = T::new(plexus_client, config);
     let expose_at = match builder.s_exposed_routers {
         ExposedRouters::None => None,
         ExposedRouters::Single(precept_type) if precept_type == TypeId::of::<T>() => Some(None),
@@ -261,7 +263,7 @@ fn addr_from_local_precept<T: PreceptConstructor>(
     if let Some(prefix) = expose_at {
         router = router.merge(T::build_router(&actix_addr));
         match prefix {
-            None => *builder.s_router.as_mut().ok_or(Error::NoRouter) = router,
+            None => *builder.s_router.as_mut().ok_or(Error::NoRouter)? = router,
             Some(prefix) => {
                 *builder
                     .s_router
@@ -280,7 +282,7 @@ fn addr_from_local_precept<T: PreceptConstructor>(
         .ok_or_else(err("Failed to set local precept address"))?;
     let addr = builder
         .l_precepts
-        .remove::<AddrLocal<T>>()
+        .remove::<T::AddrLocal>()
         .ok_or_else(err("Failed to get local precept address"))?;
     Some(addr.into())
 }
@@ -292,6 +294,7 @@ struct PlexusBase {
     pub router: axum::Router,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct PlexusClientBase {
     #[cfg(feature = "backend")]
     pub local_identity: Option<Identity>,
@@ -303,6 +306,16 @@ pub struct PlexusClientBase {
 pub struct PlexusClientBaseRemote {
     pub secret_provider: Arc<precept::client::SecretProvider>,
     pub reqwest_client: reqwest::Client,
+}
+
+#[cfg(feature = "client-http2")]
+impl Eq for PlexusClientBaseRemote {}
+
+#[cfg(feature = "client-http2")]
+impl PartialEq for PlexusClientBaseRemote {
+    fn eq(&self, other: &Self) -> bool {
+        self.secret_provider == other.secret_provider
+    }
 }
 
 #[bon]
@@ -341,10 +354,10 @@ struct Plexus {
     telegram: precepts::telegram::Addr,
 }
 
-impl TryFrom<OrchestraBuilder> for Plexus {
+impl TryFrom<PlexusBuilder> for Plexus {
     type Error = Error;
-    fn try_from(mut builder: OrchestraBuilder) -> Result<Self, Error> {
-        Self {
+    fn try_from(mut builder: PlexusBuilder) -> Result<Self, Error> {
+        Ok(Self {
             #[cfg(feature = "auth")]
             auth: builder.take("auth")?,
             #[cfg(feature = "chat")]
@@ -352,11 +365,11 @@ impl TryFrom<OrchestraBuilder> for Plexus {
             #[cfg(feature = "telegram")]
             telegram: builder.take("telegram")?,
             base: builder.take_base()?,
-        }
-        .into()
+        })
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct PlexusClient {
     base: PlexusClientBase,
     #[cfg(feature = "auth")]
@@ -385,11 +398,11 @@ cfg_block! {
     #[cfg(feature = "frontend")] {
         use dioxus::prelude::*;
 
-        pub fn use_plexus_client(plexus: &Plexus, secret_provider: Arc<SecretProvider>) {
-            let mut plexus_client = use_context_provider(|| Signal::new(plexus.to_address_book(identity.clone())));
-            use_effect(use_reactive!(|plexus, secret_provider| {
-                let mut write = plexus_client.write();
-                *write = plexus.to_client(identity);
+        pub fn use_plexus_client(plexus_client: &PlexusClient) {
+            let mut plexus_client_signal = use_context_provider(|| Signal::new(plexus_client));
+            use_effect(use_reactive!(|plexus_client| {
+                let mut write = plexus_client_signal.write();
+                *write = plexus_client;
             }));
         }
     }
