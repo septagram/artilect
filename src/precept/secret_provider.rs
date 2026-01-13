@@ -3,12 +3,13 @@ use std::{mem, sync::Arc};
 use anyhow::Context;
 use cookie_store::{self, CookieExpiration};
 use itertools::Itertools;
+#[cfg(feature = "backend")]
 use jsonwebtoken::EncodingKey;
 use keyring::Entry;
 use parking_lot::Mutex;
 use reqwest::header::HeaderValue;
-use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
-use time::{Duration, OffsetDateTime, UtcDateTime, UtcOffset};
+use serde::{Deserialize, Serialize, Serializer};
+use time::{Duration, OffsetDateTime};
 use tokio::sync::mpsc;
 use url::Url;
 
@@ -16,11 +17,9 @@ use url::Url;
 use crate::auth::middleware::JwtClaims;
 use crate::{
     auth::dto::RefreshTokenApiResponse,
-    orchestra::{BaseUrl, PlexusClientBase, PlexusClientBaseRemote},
+    orchestra::BaseUrl,
     precept,
-    precept::{
-        Identity, IntoPreceptResult, IntoPreceptSpecificResultTyped, PreceptID, UnauthorizedError,
-    },
+    precept::{IntoPreceptSpecificResultTyped, PreceptID, UnauthorizedError},
     util::report_err::*,
 };
 // @note: All of the below should've been like one line of code. Seriously. It's 2025.
@@ -351,60 +350,12 @@ impl SecretProvider {
     }
 }
 
-#[derive(Clone)]
-pub struct HttpClient {
-    client: reqwest::Client,
-    prefixed_url: Arc<Url>,
-    secret_provider: Arc<SecretProvider>,
-}
-
-impl HttpClient {
-    pub fn new(
-        prefixed_url: Arc<Url>,
-        client_base: &PlexusClientBase,
-    ) -> Result<Self, crate::orchestra::Error> {
-        let Some(PlexusClientBaseRemote {
-            secret_provider,
-            reqwest_client,
-        }) = client_base.remote
-        else {
-            return crate::orchestra::Error::NoSecretProvider.into();
-        };
-        Ok(Self {
-            client: reqwest_client,
-            prefixed_url,
-            secret_provider,
-        })
-    }
-
-    pub async fn send<S>(&self, msg: S) -> precept::Result<S::Response>
-    where
-        S: precept::MessageRemoteStrategy,
-        S::Response: DeserializeOwned,
-    {
-        self.secret_provider
-            .ensure_valid_token(&self.client)
-            .await?;
-        msg.into_request(&self.client, &*self.prefixed_url)
-            .with_context(|| format!("Failed to build request for {}", std::any::type_name::<S>()))?
-            .send()
-            .await
-            .into_precept_result_t::<S::Response>()
-            .await
-    }
-    // @todo: consume login/refresh payload (web only)
-}
-
-impl PartialEq for HttpClient {
-    fn eq(&self, other: &Self) -> bool {
-        self.secret_provider == other.secret_provider && self.prefixed_url == other.prefixed_url
-    }
-}
-
 fn serialize_expiration<S>(exp: &Option<CookieExpiration>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
+    // Instead of serializing SessionEnd, we simply discard the expiration value.
+    // (it will be deserialized for a new session anyway)
     match exp {
         Some(CookieExpiration::AtUtc(dt)) => serializer.serialize_some(dt),
         Some(CookieExpiration::SessionEnd) | None => serializer.serialize_none(),

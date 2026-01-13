@@ -3,6 +3,8 @@ use std::sync::Arc;
 use serde::Deserialize;
 use uuid::Uuid;
 pub mod client;
+#[cfg(feature = "client-http2")]
+pub mod secret_provider;
 #[cfg(feature = "backend")]
 pub mod local;
 

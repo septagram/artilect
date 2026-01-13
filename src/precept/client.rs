@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use cfg_block::cfg_block;
 use derive_more::From;
 use serde::de::DeserializeOwned;
@@ -108,9 +109,8 @@ cfg_block! {
 
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
-        mod http;
-        pub use http::HttpClient;
-        pub use http::SecretProvider;
+        pub use super::secret_provider::HttpClient;
+        pub use super::secret_provider::SecretProvider;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
@@ -123,15 +123,26 @@ cfg_block! {
             }
 
             pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<ClientRemote, orchestra::Error> {
+                let Some(PlexusClientBaseRemote {
+                    secret_provider,
+                    reqwest_client,
+                }) = client_base.remote
+                else {
+                    return crate::orchestra::Error::NoSecretProvider.into();
+                };
                 Ok(ClientRemote {
-                    client: HttpClient::new(self.prefixed_url, client_base)?,
+                    client: reqwest_client,
+                    prefixed_url,
+                    secret_provider,
                 })
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub struct ClientRemote {
-            client: HttpClient,
+            client: reqwest::Client,
+            prefixed_url: Arc<url::Url>,
+            secret_provider: Arc<SecretProvider>,
         }
 
         impl ClientRemote {
@@ -140,11 +151,24 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                self.client.send(msg).await
-                // let request = msg.into_request(self.client.client().await, self.base_url.as_ref());
-                // request.send().await.into_precept_result_t::<S::Response>().await
+                self.secret_provider
+                    .ensure_valid_token(&self.client)
+                    .await?;
+                msg.into_request(&self.client, &*self.prefixed_url)
+                    .with_context(|| format!("Failed to build request for {}", std::any::type_name::<S>()))?
+                    .send()
+                    .await
+                    .into_precept_result_t::<S::Response>()
+                    .await
             }
         }
+
+        impl PartialEq for ClientRemote {
+            fn eq(&self, other: &Self) -> bool {
+                self.secret_provider == other.secret_provider && self.prefixed_url == other.prefixed_url
+            }
+        }
+
     }
 
     #[cfg(all(feature = "backend", feature = "client-http2"))] {
