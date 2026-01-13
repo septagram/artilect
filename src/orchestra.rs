@@ -52,13 +52,6 @@ cfg_block! {
     }
 }
 
-// trait OrchestraExt {
-//     type Builder: OrchestraBuilderExt;
-//     fn build(self) -> Self::Builder;
-//     type AddressBook: Clone + Send + Sync + PartialEq + Eq + 'static;
-//     fn to_address_book(&self, identity: Option<Identity>) -> Self::AddressBook;
-// }
-
 #[cfg(feature = "server-http2")]
 enum ExposedRouters {
     None,
@@ -338,53 +331,6 @@ impl PlexusClientBase {
     }
 }
 
-// #[cfg(feature = "backend")]
-// pub struct PlexusLocalClientBase {
-//     pub local_identity: Identity,
-// }
-//
-// #[cfg(feature = "backend")]
-// impl TryFrom<PlexusClientBase> for PlexusLocalClientBase {
-//     type Error = Error;
-//     fn try_from(base: PlexusClientBase) -> Result<Self, Self::Error> {
-//         Ok(Self {
-//             local_identity: base.local_identity.ok_or(Error::NoLocalIdentity)?,
-//         })
-//     }
-// }
-//
-// #[cfg(feature = "client-http2")]
-// pub struct PlexusRemoteClientBase {
-//     pub secret_provider: Arc<precept::client::SecretProvider>,
-//     pub reqwest_client: reqwest::Client,
-// }
-//
-// #[cfg(feature = "client-http2")]
-// impl TryFrom<PlexusClientBase> for PlexusRemoteClientBase {
-//     type Error = Error;
-//     fn try_from(base: PlexusClientBase) -> Result<Self, Self::Error> {
-//         Ok(Self {
-//             secret_provider: base.secret_provider.ok_or(Error::NoSecretProvider)?,
-//             reqwest_client: base.reqwest_client.ok_or(Error::NoSecretProvider)?,
-//         })
-//     }
-// }
-
-// trait OrchestraBuilderExt {
-//     #[cfg(feature = "client-http2")]
-//     fn base_url(&self, base_url: &str) -> Self;
-// }
-//
-// Use anymap to store the builder state, the precepts themselves, the MSPC txs and rxs.
-// Construct the address book first.
-// Builder methods are separate for local and remote precepts, the local ones accept config, remote
-// ones accept prefix URL.
-// Only the final AddressBook avoids anymap, has Client fields directly.
-
-// trait OrchestraBuilderSetPrecept: OrchestraBuilderExt {}
-//
-// #[derive(PlexusClient)]
-
 struct Plexus {
     base: PlexusBase,
     #[cfg(feature = "auth")]
@@ -434,13 +380,6 @@ impl Plexus {
         })
     }
 }
-
-// orchestra_from_precepts! {
-//     auth: auth,
-//     chat: chat,
-//     telegram: telegram,
-//     // valid ignored comment
-// }
 
 cfg_block! {
     #[cfg(feature = "frontend")] {
