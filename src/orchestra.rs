@@ -369,28 +369,35 @@ impl TryFrom<PlexusBuilder> for Plexus {
     }
 }
 
-#[derive(PartialEq, Eq)]
-pub struct PlexusClient {
-    base: PlexusClientBase,
-    #[cfg(feature = "auth")]
-    auth: precepts::auth::Client,
-    #[cfg(feature = "chat")]
-    chat: precepts::chat::Client,
-    #[cfg(feature = "telegram")]
-    telegram: precepts::telegram::Client,
+impl Plexus {
+    pub fn to_injector(self, base: PlexusClientBase) -> Injector {
+        Injector::new(self, base)
+    }
 }
 
-impl Plexus {
-    pub fn to_client(&self, client_base: PlexusClientBase) -> Result<PlexusClient, Error> {
-        Ok(PlexusClient {
-            #[cfg(feature = "auth")]
-            auth: self.auth.to_client(&client_base)?,
-            #[cfg(feature = "chat")]
-            chat: self.chat.to_client(&client_base)?,
-            #[cfg(feature = "telegram")]
-            telegram: self.telegram.to_client(&client_base)?,
-            base: client_base,
-        })
+pub struct Injector {
+    pub base: PlexusClientBase,
+    plexus: Plexus,
+}
+
+impl Injector {
+    pub fn new(plexus: Plexus, base: PlexusClientBase) -> Self {
+        Self { base, plexus }
+    }
+
+    #[cfg(feature = "auth")]
+    pub fn auth(&self) -> Result<precepts::auth::Client, Error> {
+        self.plexus.auth.to_client(&self.base)
+    }
+
+    #[cfg(feature = "chat")]
+    pub fn chat(&self) -> Result<precepts::chat::Client, Error> {
+        self.plexus.chat.to_client(&self.base)
+    }
+
+    #[cfg(feature = "telegram")]
+    pub fn telegram(&self) -> Result<precepts::telegram::Client, Error> {
+        self.plexus.telegram.to_client(&self.base)
     }
 }
 
@@ -398,12 +405,13 @@ cfg_block! {
     #[cfg(feature = "frontend")] {
         use dioxus::prelude::*;
 
-        pub fn use_plexus_client(plexus_client: &PlexusClient) {
-            let mut plexus_client_signal = use_context_provider(|| Signal::new(plexus_client));
-            use_effect(use_reactive!(|plexus_client| {
-                let mut write = plexus_client_signal.write();
-                *write = plexus_client;
-            }));
-        }
+        // TODO: Implement alternative using per-precept hooks returning precept::client::Client(|Local|Remote)
+        // pub fn use_plexus_client(plexus_client: &PlexusClient) {
+        //     let mut plexus_client_signal = use_context_provider(|| Signal::new(plexus_client));
+        //     use_effect(use_reactive!(|plexus_client| {
+        //         let mut write = plexus_client_signal.write();
+        //         *write = plexus_client;
+        //     }));
+        // }
     }
 }

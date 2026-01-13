@@ -20,7 +20,8 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
 
 pub trait PreceptConstructor: Precept {
     type Config;
-    fn new(plexus_client: PlexusClient, config: Self::Config) -> Result<Self, anyhow::Error>;
+    type PlexusClient;
+    fn new(plexus_client: Self::PlexusClient, config: Self::Config) -> Result<Self, anyhow::Error>;
     fn id(config: &Self::Config) -> PreceptID;
 }
 
