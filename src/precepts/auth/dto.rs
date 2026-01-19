@@ -40,6 +40,15 @@ pub enum AuthProvider {
     Unsupported,
 }
 
+impl AuthProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Telegram => "Telegram",
+            Self::Unsupported => "Unsupported",
+        }
+    }
+}
+
 #[dto(auth, request)]
 #[message(BotLoginStartResponse, BotLoginStartMessage)]
 pub struct BotLoginStartRequest {

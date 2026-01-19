@@ -5,6 +5,8 @@
     proc_macro_hygiene,
     const_option_ops,
     try_blocks,
+    min_specialization,
+    stmt_expr_attributes,
 )]
 
 use uuid::Uuid;
@@ -12,7 +14,7 @@ use uuid::Uuid;
 pub mod config;
 pub mod precept;
 pub mod precepts;
-pub use precepts::cortex::auth;
+pub use precepts::auth;
 
 #[cfg(feature = "infer")]
 pub mod infer;

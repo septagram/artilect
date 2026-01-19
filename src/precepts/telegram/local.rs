@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::{
     auth,
     auth::dto::{AuthProvider, ConfirmLoginRequest, InvalidateLoginRequest},
-    orchestra::AddressBook,
+    orchestra::{GetClient, Injector},
     precept,
     precept::{
         Identity, MessageLocalStrategy, PreceptConstructor, PreceptID, SignedMessage,
@@ -38,7 +38,7 @@ pub struct Config {
 
 pub struct Resources {
     bot: DefaultParseMode<Bot>,
-    address_book: AddressBook,
+    auth: auth::Client,
 }
 
 type CommandReceivedResponse = ();
@@ -52,14 +52,15 @@ enum Command {
     Help,
 }
 
-impl PreceptConstructor for Precept {
+impl PreceptConstructor<crate::orchestra::Plexus> for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Self {
+    fn new(injector: &Injector<'_, crate::orchestra::Plexus>, config: Config) -> Result<Self, anyhow::Error> {
+        let auth = injector.get::<auth::Client>()?;
         let bot = Bot::new(config.bot_token.as_ref()).parse_mode(tg::ParseMode::MarkdownV2);
-        Self {
-            resources: Arc::new(Resources { address_book, bot }),
+        Ok(Self {
+            resources: Arc::new(Resources { auth, bot }),
             task_handle: None,
-        }
+        })
     }
 
     fn id(_config: &Self::Config) -> PreceptID {
@@ -200,7 +201,6 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                         Ok(code),
                     ) => {
                         let user = resources
-                            .address_book
                             .auth
                             .send(ConfirmLoginRequest {
                                 code,
@@ -221,7 +221,6 @@ impl MessageLocalStrategy<Precept> for CommandReceived {
                     }
                     (PrivateChatWithUser::NoPrivateChat, Ok(code)) => {
                         let invalidate_result = resources
-                            .address_book
                             .auth
                             .send(InvalidateLoginRequest { code })
                             .await;

@@ -1,3 +1,5 @@
+use regex::Regex;
+
 pub mod report_err {
     use tokio::sync::mpsc::Sender;
 
@@ -10,8 +12,8 @@ pub mod report_err {
         E: Send + Sync + Clone,
     {
         fn report_err(self, tx: &Sender<E>) -> Self {
-            if let Err(ref err_original) = self &&
-                let Err(err) = tx.try_send(err_original.clone())
+            if let Err(ref err_original) = self
+                && let Err(err) = tx.try_send(err_original.clone())
             {
                 tracing::error!("Failed to report error to the user: {err:?}");
                 tracing::error!("Original error: {err:?}");
@@ -50,11 +52,17 @@ pub mod report_err {
         E: Send + Sync,
     {
         fn unwrap_or_report(self, tx: &Sender<E>) {
-            self.unwrap_or_else(|err|{
+            self.unwrap_or_else(|err| {
                 if let Err(err) = tx.try_send(err) {
                     tracing::error!("Failed to report error to the user: {err:?}");
                 };
             })
         }
     }
+}
+
+pub fn slugify<T: From<String>>(s: &str) -> T {
+    let s = s.to_lowercase();
+    let re = Regex::new(r"[^\w\d]+").unwrap();
+    T::from(re.replace_all(&s, "-").into_owned())
 }

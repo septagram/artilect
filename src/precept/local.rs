@@ -1,9 +1,16 @@
-use crate::orchestra::AddressBook;
+use cfg_block::cfg_block;
+use crate::orchestra::Injector;
+use crate::precept::client::AddrLocal;
 use super::{Error, Message, PreceptID, SignedMessage};
 
 pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // const ID: PreceptID;
     // const ROUTE_PREFIX: &'static str;
+    const NAME: &'static str;
+    type Addr;
+    type AddrLocal;
+    type Client;
+    type ClientLocal;
     type Resources;
     type State;
     // #[cfg(feature = "server-http2")]
@@ -11,9 +18,9 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // fn new(resources: Self::Resources) -> Self;
 }
 
-pub trait PreceptConstructor: Precept {
+pub trait PreceptConstructor<P>: Precept {
     type Config;
-    fn new(address_book: AddressBook, config: Self::Config) -> Self;
+    fn new(injector: &Injector<'_, P>, config: Self::Config) -> Result<Self, anyhow::Error>;
     fn id(config: &Self::Config) -> PreceptID;
 }
 
@@ -52,7 +59,27 @@ impl From<actix::MailboxError> for Error {
     }
 }
 
-#[cfg(feature = "server-http2")]
-pub trait Routable {
-    fn build_router(self) -> axum::Router;
+cfg_block! {
+    #[cfg(feature = "server-http2")] {
+        pub trait Routable {
+            fn build_router(&self) -> axum::Router;
+        }
+
+        impl<T> Routable for T where T: Precept {
+            fn build_router(&self) -> axum::Router { axum::Router::new() }
+        }
+
+        impl<T> Routable for AddrLocal<T> where T: Precept {
+            fn build_router(&self) -> axum::Router { axum::Router::new() }
+        }
+
+        impl<T> Routable for actix::Addr<T> where T: Precept {
+            default fn build_router(&self) -> axum::Router { axum::Router::new() }
+        }
+
+        #[cfg(feature = "client-http2")]
+        impl<T> Routable for super::client::Addr<T> where T: Precept {
+            fn build_router(&self) -> axum::Router { axum::Router::new() }
+        }
+    }
 }

@@ -2,10 +2,17 @@ use std::env;
 
 use once_cell::sync::Lazy;
 use time::Duration;
+use crate::util::slugify;
 
 pub static NAME: Lazy<Box<str>> = Lazy::new(|| {
     env::var("NAME")
         .expect("NAME environment variable must be set")
+        .into_boxed_str()
+});
+
+pub static INSTANCE_ID: Lazy<Box<str>> = Lazy::new(|| {
+    env::var("INSTANCE_ID")
+        .unwrap_or_else(|_| slugify(&**NAME))
         .into_boxed_str()
 });
 

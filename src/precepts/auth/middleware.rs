@@ -1,35 +1,58 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::{
     Router,
-    extract::Request,
-    middleware::{Next, from_fn},
+    extract::{Request, State},
+    middleware::{Next, from_fn_with_state},
     response::Response,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Validation, decode, encode};
 use keyring::Entry;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use time::{OffsetDateTime, UtcDateTime, UtcOffset};
+use time::{OffsetDateTime, UtcOffset};
 use uuid::Uuid;
+
 use crate::{
     precept,
     precept::{Identity, UnauthorizedError},
 };
 
+/// Global JWT keys for validation and signing, set by auth precept during initialization
+static DECODING_KEY: OnceCell<Arc<DecodingKey>> = OnceCell::new();
+static ENCODING_KEY: OnceCell<Arc<EncodingKey>> = OnceCell::new();
+
+/// Set the global JWT keys. Should be called once during auth precept initialization.
+pub fn set_global_jwt_keys(encoding: Arc<EncodingKey>, decoding: Arc<DecodingKey>) -> Result<(), &'static str> {
+    ENCODING_KEY.set(encoding).map_err(|_| "Encoding key already set")?;
+    DECODING_KEY.set(decoding).map_err(|_| "Decoding key already set")?;
+    Ok(())
+}
+
+/// Get the global decoding key. Panics if not set.
+pub fn get_global_decoding_key() -> Arc<DecodingKey> {
+    DECODING_KEY.get().expect("JWT decoding key not initialized - auth precept must be started first").clone()
+}
+
+/// Get the global encoding key. Panics if not set.
+pub fn get_global_encoding_key() -> Arc<EncodingKey> {
+    ENCODING_KEY.get().expect("JWT encoding key not initialized - auth precept must be started first").clone()
+}
+
 pub const KEYRING_SERVICE_NAME: &str = "artilect-cortex";
-pub const ARTILECT_INSTANCE_ID: &str = "artilect"; // To support running multiple artilects, make dynamic.
 pub const JWT_SECRET_NAME: &str = "jwt-secret";
 
-static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
+pub fn get_secret(instance_id: &str, secret_name: &str) -> Result<Box<[u8]>, anyhow::Error> {
+    let context = |reason: &str| format!("{reason} JWT secret for instance {}", instance_id);
     let entry = Entry::new(
-        format!("{}.{}", ARTILECT_INSTANCE_ID, KEYRING_SERVICE_NAME).as_str(),
-        JWT_SECRET_NAME,
+        format!("{}.{}", instance_id, KEYRING_SERVICE_NAME).as_str(),
+        secret_name,
     )
-    .expect("Invalid keyring name for JWT secret");
+    .with_context(|| context("Invalid keyring name for"))?;
     match entry.get_secret() {
-        Ok(secret) => Box::from(secret),
+        Ok(secret) => Ok(secret.into_boxed_slice()),
         Err(err) => match err {
             keyring::Error::NoEntry => {
                 // Generate cryptographically secure random secret
@@ -39,19 +62,22 @@ static JWT_SECRET: Lazy<Box<[u8]>> = Lazy::new(|| {
                 // Store it in keyring
                 entry
                     .set_secret(&secret)
-                    .expect("Failed to store JWT secret in keyring");
+                    .with_context(|| context("Failed to store"))?;
 
-                secret.into()
+                Ok(Box::from(secret))
             }
-            _ => panic!("Failed to get secret from keyring: {}", err),
+            _ => Err(err).with_context(|| context("Failed to retrieve")),
         },
     }
-});
+}
 
-static JWT_ENCODING_KEY: Lazy<EncodingKey> =
-    Lazy::new(|| EncodingKey::from_secret(JWT_SECRET.as_ref()));
-static JWT_DECODING_KEY: Lazy<DecodingKey> =
-    Lazy::new(|| DecodingKey::from_secret(JWT_SECRET.as_ref()));
+pub fn get_jwt_key_pair(instance_id: &str) -> Result<(EncodingKey, DecodingKey), anyhow::Error> {
+    let secret = get_secret(instance_id, JWT_SECRET_NAME)?;
+    Ok((
+        EncodingKey::from_secret(&secret),
+        DecodingKey::from_secret(&secret),
+    ))
+}
 
 static TOKEN_VALIDATION: Lazy<Validation> = Lazy::new(|| Validation::new(Algorithm::HS256));
 
@@ -74,7 +100,7 @@ pub trait JwtClaims: Clone + Serialize + DeserializeOwned + Send + Sync {
     type Payload: Clone + Send + Sync + 'static;
     fn new(payload: Self::Payload, exp: OffsetDateTime) -> Self;
     fn payload(&self) -> Self::Payload;
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken>;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken>;
 }
 
 // JWT Claims structure that matches your Identity enum
@@ -102,8 +128,8 @@ impl JwtClaims for JwtClaimsAccess {
         self.id
     }
 
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken> {
-        let token = encode(&jsonwebtoken::Header::default(), &self, &*JWT_ENCODING_KEY)?;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken> {
+        let token = encode(&jsonwebtoken::Header::default(), &self, encoding_key)?;
         Ok(GeneratedToken {
             token,
             exp: self.exp,
@@ -140,8 +166,8 @@ impl JwtClaims for JwtClaimsRefresh {
         SessionKey(self.ses.clone())
     }
 
-    fn to_token(&self) -> jsonwebtoken::errors::Result<GeneratedToken> {
-        let token = encode(&jsonwebtoken::Header::default(), &self, &*JWT_ENCODING_KEY)?;
+    fn to_token(&self, encoding_key: &EncodingKey) -> jsonwebtoken::errors::Result<GeneratedToken> {
+        let token = encode(&jsonwebtoken::Header::default(), &self, encoding_key)?;
         Ok(GeneratedToken {
             token,
             exp: self.exp,
@@ -173,6 +199,7 @@ impl GeneratedToken {
 
 // Middleware to extract and validate JWT from cookie
 async fn jwt<Claims: JwtClaims>(
+    State(decoding_key): State<Arc<DecodingKey>>,
     jar: CookieJar,
     mut req: Request,
     next: Next,
@@ -183,8 +210,10 @@ async fn jwt<Claims: JwtClaims>(
             let token = cookie.value();
 
             // Decode and validate JWT
-            let token_data = decode::<Claims>(token, &*JWT_DECODING_KEY, &TOKEN_VALIDATION)
-                .map_err(|e| match e.kind() {
+            let token_data =
+                decode::<Claims>(token, &*decoding_key, &TOKEN_VALIDATION).map_err(|e| match e
+                    .kind()
+                {
                     jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                         UnauthorizedError::ExpiredToken
                     }
@@ -199,6 +228,11 @@ async fn jwt<Claims: JwtClaims>(
     }
 }
 
+// @todo: RouterAuth currently uses global static keys (ENCODING_KEY, DECODING_KEY) which breaks
+// multi-instance support. After removing Actix, refactor to pass keys through router state.
+// The chicken-egg problem: routes need actix::Addr for message passing AND DecodingKey for JWT,
+// but Addr doesn't exist until after precept.start() consumes the precept.
+// With tokio::mpsc channels (post-Actix), we can create the sender before the consumer exists.
 pub trait RouterAuth {
     fn require_access_token(self) -> Self;
     fn require_refresh_token(self) -> Self;
@@ -209,10 +243,10 @@ where
     T: Clone + Send + Sync + 'static,
 {
     fn require_access_token(self) -> Self {
-        self.layer(from_fn(jwt::<JwtClaimsAccess>))
+        self.layer(from_fn_with_state(get_global_decoding_key(), jwt::<JwtClaimsAccess>))
     }
 
     fn require_refresh_token(self) -> Self {
-        self.layer(from_fn(jwt::<JwtClaimsRefresh>))
+        self.layer(from_fn_with_state(get_global_decoding_key(), jwt::<JwtClaimsRefresh>))
     }
 }

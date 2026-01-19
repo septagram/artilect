@@ -3,12 +3,15 @@ use std::sync::Arc;
 use serde::Deserialize;
 use uuid::Uuid;
 pub mod client;
+#[cfg(feature = "client-http2")]
+pub mod secret_provider;
 #[cfg(feature = "backend")]
 pub mod local;
 
 #[cfg(feature = "backend")]
 pub use local::*;
 use serde::{Serialize, de::DeserializeOwned};
+use url::Url;
 
 use crate::auth::User;
 
@@ -58,7 +61,7 @@ pub struct SignedMessage<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserIdentity {
     pub user_id: Uuid,
     pub account_id: Uuid,
@@ -66,7 +69,7 @@ pub struct UserIdentity {
     // or role: Role, // derives Copy
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Identity {
     User(UserIdentity),
@@ -116,7 +119,11 @@ pub trait MessageLocalStrategy<P: Precept>: Message {
 
 #[cfg(feature = "client-http2")]
 pub trait MessageRemoteStrategy: Message {
-    fn into_request(self, client: &reqwest::Client, base_url: &str) -> reqwest::RequestBuilder;
+    fn into_request(
+        self,
+        client: &reqwest::Client,
+        base_url: &Url,
+    ) -> std::result::Result<reqwest::RequestBuilder, url::ParseError>;
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -194,7 +201,10 @@ impl IntoPreceptSpecificResultTyped for reqwest::Result<reqwest::Response> {
             Ok(response) => {
                 let status = response.status();
                 if status.is_success() {
-                    response.json::<T>().await.map_err(|_| Error::InvalidResponse)
+                    response
+                        .json::<T>()
+                        .await
+                        .map_err(|_| Error::InvalidResponse)
                 } else {
                     Err(match status.as_u16() {
                         400 => match response.json::<HttpErrorBodyBadRequest>().await {
@@ -210,14 +220,14 @@ impl IntoPreceptSpecificResultTyped for reqwest::Result<reqwest::Response> {
                         500 => Error::Internal(anyhow::anyhow!("Internal error")),
                         501 => Error::NotImplemented,
                         503 => Error::ServiceUnavailable,
-                        _ => Error::InvalidResponse
+                        _ => Error::InvalidResponse,
                     })
                 }
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 Err(Error::ServiceUnavailable)
-            },
+            }
         }
     }
 }

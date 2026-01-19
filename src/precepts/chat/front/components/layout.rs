@@ -3,9 +3,9 @@ use uuid::Uuid;
 
 // use tokio::time::{sleep, Duration};
 use super::SidebarThreadLink;
-use crate::precepts::vector::chat::front::{Route, state::State};
+use crate::precepts::chat::front::{Route, state::State};
 
-pub static CSS: Asset = asset!("/src/precepts/vector/chat/front/components/layout.css");
+pub static CSS: Asset = asset!("/src/precepts/chat/front/components/layout.css");
 
 #[component]
 pub fn Layout() -> Element {

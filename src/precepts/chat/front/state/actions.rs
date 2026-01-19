@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use dioxus::{logger::tracing::error, prelude::*};
 use futures_util::{Future, StreamExt};
 use time::OffsetDateTime;
@@ -5,8 +7,8 @@ use uuid::Uuid;
 
 use super::{State, SyncState, consume_sync_update_batch};
 use crate::{
-    orchestra::AddressBook,
-    precepts::vector::chat::{
+    orchestra::{Plexus, PlexusClientBase, use_client},
+    precepts::chat::{
         Client,
         dto::{
             ChatMessage, FetchThreadRequest, FetchUserThreadsRequest, OneToManyChild,
@@ -32,8 +34,9 @@ where
 }
 
 pub fn use_app_actions() {
-    let api = use_context::<Signal<AddressBook>>();
-    let chat_api = use_memo(move || api.read().chat.clone());
+    let plexus = use_context::<Signal<Arc<Plexus>>>();
+    let base = use_context::<Signal<PlexusClientBase>>();
+    let chat_api: Memo<Client> = use_client(plexus, base);
     use_action(chat_api, &handle_fetch_user_threads);
     use_action(chat_api, &handle_fetch_thread);
     use_action(chat_api, &handle_send_message);

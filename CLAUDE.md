@@ -6,6 +6,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Artilect is a modular AI agent framework inspired by "Symphony of Thought" by David Shapiro. It implements a precept-based architecture where services (precepts) communicate via a message-passing system. The project is in early development and aims to build sophisticated AI agents with dynamic task management and external system interaction.
 
+## Version Control
+
+This repository uses **jj (Jujutsu)** as its version control system, not git. Use `jj` commands instead of `git`:
+
+```bash
+jj status      # instead of git status
+jj diff        # instead of git diff
+jj commit      # instead of git commit (note: jj commit works differently)
+jj log         # instead of git log
+```
+
+### Commit Workflow
+
+**Quick WIP commits** - Use for work-in-progress, unstable states:
+```bash
+jj commit -m "description"
+```
+
+**Proper feature merges** - Use when completing a significant unit of work:
+```bash
+/merge-feature feat/14-auth
+```
+
+The `/merge-feature` command will:
+1. Find the last commit with issue ID `[A##]`
+2. Review all changes since then
+3. Suggest cleanup items
+4. Create a non-ff merge with proper issue ID
+5. Update the feature bookmark
+
+Issue ID format: `[A##]` (e.g., `[A14]` for issue 14)
+
 ## Build System & Commands
 
 ### Building Binaries
@@ -96,11 +128,9 @@ src/
 ├── precept.rs        # Core precept traits and types
 ├── precepts.rs       # Precept module declarations
 ├── precepts/
-│   ├── cortex/       # Core system precepts
-│   │   └── auth/     # Authentication & authorization
-│   └── vector/       # User-facing precepts
-│       ├── chat/     # Chat interface with LLM integration
-│       └── telegram/ # Telegram bot integration
+│   ├── auth/         # Authentication & authorization
+│   ├── chat/         # Chat interface with LLM integration
+│   └── telegram/     # Telegram bot integration
 ├── orchestra.rs      # Precept orchestration via macros
 ├── infer/            # LLM inference utilities
 ├── config/           # Configuration management

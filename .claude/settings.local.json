@@ -10,7 +10,22 @@
       "WebFetch(domain:docs.rs)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(caddy validate:*)"
+      "Bash(caddy validate:*)",
+      "Bash(just auth build:*)",
+      "Skill(rust-preferences)",
+      "Bash(jj status:*)",
+      "Bash(jj log:*)",
+      "Bash(jj commit:*)",
+      "Bash(just cortex check:*)",
+      "Bash(file:*)",
+      "Bash(git diff-index:*)",
+      "Bash(git hash-object:*)",
+      "Bash(git update-index:*)",
+      "Bash(jj diff:*)",
+      "Bash(just get-required-features:*)",
+      "Bash(cargo clean:*)",
+      "Bash(jj bookmark:*)",
+      "Bash(jj new:*)"
     ],
     "deny": [],
     "ask": []

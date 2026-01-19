@@ -13,6 +13,7 @@ use axum_extra::extract::{
 };
 use dashmap::DashMap;
 use indoc::formatdoc;
+use jsonwebtoken::{DecodingKey, EncodingKey};
 use sqlx::{PgPool, postgres::types::PgInterval};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcDateTime, UtcOffset};
 use tokio::sync::{mpsc, oneshot};
@@ -28,9 +29,12 @@ use crate::{
             ListAuthProvidersResponse, LoginPollRequest, LoginPollResponse,
             RefreshTokenApiResponse, RefreshTokenRequest, RefreshTokenResponse, Session,
         },
-        middleware::{JwtClaims, JwtClaimsAccess, JwtClaimsRefresh, MakeExpiration, RouterAuth},
+        middleware::{
+            JwtClaims, JwtClaimsAccess, JwtClaimsRefresh, MakeExpiration, RouterAuth,
+            get_global_encoding_key, get_jwt_key_pair, set_global_jwt_keys,
+        },
     },
-    orchestra::AddressBook,
+    orchestra::Injector,
     precept,
     precept::{
         ActixResult, Identity, IntoPreceptResult, MessageLocalStrategy, PreceptConstructor,
@@ -152,24 +156,28 @@ struct LoginAttempt {
 }
 
 pub struct Config {
-    pub pool: PgPool,
     pub max_concurrent_login_attempts: usize,
     pub login_attempts_timeout_min: u16,
     pub auth_providers: Vec<AuthFlowBackend>,
+    pub rest: StoredConfig,
+}
+
+pub struct StoredConfig {
+    pub pool: PgPool,
+    pub instance_id: Box<str>,
     pub access_token_lifetime: Duration,
     pub refresh_token_lifetime: Option<Duration>,
 }
 
 pub struct Resources {
-    pub address_book: AddressBook,
-    pub pool: PgPool,
-    pub login_attempts_map: DashMap<u128, LoginAttempt>,
-    pub login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
-    pub login_attempts_timeout: Duration,
-    pub auth_providers: HashMap<Box<str>, AuthFlowBackend>,
-    pub auth_providers_info: Arc<[AuthProviderInfo]>,
-    pub access_token_lifetime: Duration,
-    pub refresh_token_lifetime: Option<Duration>,
+    login_attempts_map: DashMap<u128, LoginAttempt>,
+    login_attempts_expiry_queue: mpsc::Sender<(UtcDateTime, u128)>,
+    login_attempts_timeout: Duration,
+    auth_providers: HashMap<Box<str>, AuthFlowBackend>,
+    auth_providers_info: Arc<[AuthProviderInfo]>,
+    encoding_key: Arc<EncodingKey>,
+    decoding_key: Arc<DecodingKey>,
+    rest: StoredConfig,
 }
 
 #[precept(
@@ -194,16 +202,14 @@ impl actix::Actor for Precept {
     }
 }
 
-impl PreceptConstructor for Precept {
+impl PreceptConstructor<crate::orchestra::Plexus> for Precept {
     type Config = Config;
-    fn new(address_book: AddressBook, config: Config) -> Self {
+    fn new(_injector: &Injector<'_, crate::orchestra::Plexus>, config: Config) -> Result<Self, anyhow::Error> {
         let Config {
-            pool,
             max_concurrent_login_attempts,
             login_attempts_timeout_min,
             auth_providers: auth_providers_config,
-            access_token_lifetime,
-            refresh_token_lifetime,
+            rest,
         } = config;
         let (expire_tx, mut expire_rx) = mpsc::channel(max_concurrent_login_attempts);
         let (stop_tx, mut stop_rx) = oneshot::channel();
@@ -213,16 +219,21 @@ impl PreceptConstructor for Precept {
             auth_providers_info.push(auth_provider.to_auth_provider_info());
             auth_providers.insert(auth_provider.id(), auth_provider);
         }
+        let (encoding_key, decoding_key) = get_jwt_key_pair(&*rest.instance_id)?;
+        let encoding_key = Arc::new(encoding_key);
+        let decoding_key = Arc::new(decoding_key);
+        // Set the global JWT keys for use by other precepts' JWT middleware
+        set_global_jwt_keys(encoding_key.clone(), decoding_key.clone())
+            .map_err(|msg| anyhow::anyhow!("JWT keys already set - auth precept initialized twice? ({})", msg))?;
         let resources = Arc::new(Resources {
-            address_book,
-            pool,
             login_attempts_map: DashMap::new(),
             login_attempts_expiry_queue: expire_tx,
             login_attempts_timeout: Duration::minutes(login_attempts_timeout_min.into()),
             auth_providers,
             auth_providers_info: auth_providers_info.into(),
-            access_token_lifetime,
-            refresh_token_lifetime,
+            encoding_key,
+            decoding_key,
+            rest,
         });
 
         let res = resources.clone();
@@ -248,10 +259,10 @@ impl PreceptConstructor for Precept {
             }
         });
 
-        Self {
+        Ok(Self {
             resources,
             stop_signal: Some(stop_tx),
-        }
+        })
     }
 
     fn id(_config: &Self::Config) -> PreceptID {
@@ -260,14 +271,18 @@ impl PreceptConstructor for Precept {
 }
 
 impl Routable for actix::Addr<Precept> {
-    fn build_router(self) -> Router {
+    fn build_router(&self) -> Router {
+        // If from_fn_with_state fails:
+        // https://docs.rs/tower-service/0.3.3/tower_service/trait.Service.html
+        // https://docs.rs/axum/latest/axum/struct.Router.html#method.layer
+        // https://docs.rs/axum/latest/axum/middleware/index.html
         let mut service_routes = Router::new();
         service_routes = ConfirmLoginRequest::route(service_routes);
         service_routes = InvalidateLoginRequest::route(service_routes);
         service_routes = service_routes.require_access_token();
         let mut refresh_routes = Router::new();
         refresh_routes = RefreshTokenRequest::route(refresh_routes);
-        refresh_routes = refresh_routes.require_refresh_token();
+        refresh_routes = refresh_routes.require_refresh_token(); 
         let mut entry_routes = Router::new();
         entry_routes = BotLoginStartRequest::route(entry_routes);
         entry_routes = ListAuthProvidersRequest::route(entry_routes);
@@ -275,7 +290,7 @@ impl Routable for actix::Addr<Precept> {
         entry_routes
             .merge(refresh_routes)
             .merge(service_routes)
-            .with_state(self)
+            .with_state(self.clone())
     }
 }
 
@@ -364,7 +379,7 @@ impl MessageLocalStrategy<Precept> for LoginAttemptStatusQuery {
                             user,
                             account,
                             session,
-                            access_token_lifetime: res.access_token_lifetime,
+                            access_token_lifetime: res.rest.access_token_lifetime,
                         },
                     }),
                     None => {
@@ -404,7 +419,7 @@ async fn handle_login_poll(
                 identity,
                 MakeExpiration::FromDuration(access_token_lifetime).into(),
             )
-            .to_token()
+            .to_token(&get_global_encoding_key())
             .context("Failed to create access token")?;
             let access_token_exp = access_token.exp;
             jar = jar.add(access_token.into_cookie());
@@ -414,7 +429,7 @@ async fn handle_login_poll(
                         SessionKey(session.id),
                         MakeExpiration::FromTime(session.expires_at).into(),
                     )
-                    .to_token()
+                    .to_token(&get_global_encoding_key())
                     .context("Failed to create refresh token")?;
                     let exp = refresh_token.exp;
                     jar = jar.add(refresh_token.into_cookie());
@@ -473,7 +488,7 @@ impl MessageLocalStrategy<Precept> for RefreshTokenRequest {
             }
         }
 
-        match (res.refresh_token_lifetime, from) {
+        match (res.rest.refresh_token_lifetime, from) {
             (Some(lifetime), Identity::Precept { id, on_behalf_of })
                 if id == PreceptID::Auth && on_behalf_of.is_none() =>
             {
@@ -487,7 +502,7 @@ impl MessageLocalStrategy<Precept> for RefreshTokenRequest {
                     PgInterval::try_from(lifetime)
                         .map_err(|_| anyhow::anyhow!("Failed to convert access token lifetime"))?,
                 )
-                .fetch_one(&res.pool)
+                .fetch_one(&res.rest.pool)
                 .await
                 .map_err(|err| match err {
                     sqlx::Error::RowNotFound => {
@@ -525,13 +540,13 @@ async fn handle_refresh_token(
     let mut jar = CookieJar::new();
     jar = jar.add(
         JwtClaimsAccess::new(Identity::User(user_identity), access_token_exp)
-            .to_token()
+            .to_token(&get_global_encoding_key())
             .context("Failed to create access token")?
             .into_cookie(),
     );
     jar = jar.add(
         JwtClaimsRefresh::new(session_key, refresh_token_exp)
-            .to_token()
+            .to_token(&get_global_encoding_key())
             .context("Failed to create refresh token")?
             .into_cookie(),
     );
@@ -572,22 +587,14 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                 provider_username: Option<Box<str>>,
                 provider_display_name: Option<Box<str>>,
             ) -> precept::Result<(User, Account, Session)> {
-                match (
-                    self.user_id,
-                    self.user_name,
-                    self.account_id,
-                    self.session_id,
-                    self.session_created_at,
-                    self.session_expires_at,
-                ) {
-                    (
-                        Some(user_id),
-                        Some(user_name),
-                        Some(account_id),
-                        Some(session_id),
-                        Some(session_created_at),
-                        Some(session_expires_at),
-                    ) => Ok((
+                if let Some(user_id) = self.user_id
+                    && let Some(user_name) = self.user_name
+                    && let Some(account_id) = self.account_id
+                    && let Some(session_id) = self.session_id
+                    && let Some(session_created_at) = self.session_created_at
+                    && let Some(session_expires_at) = self.session_expires_at
+                {
+                    Ok((
                         User {
                             id: user_id,
                             name: user_name.into(),
@@ -605,8 +612,9 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                             created_at: session_created_at,
                             expires_at: session_expires_at,
                         },
-                    )),
-                    _ => Err(precept::Error::Internal(anyhow!("Invalid user row"))),
+                    ))
+                } else {
+                    Err(precept::Error::Internal(anyhow!("Invalid user row")))
                 }
             }
         }
@@ -624,24 +632,28 @@ impl MessageLocalStrategy<Precept> for ConfirmLoginRequest {
                             SELECT user_id, user_name, account_id, session_id, session_created_at, session_expires_at
                             FROM get_user_from_login($1, $2, $3, $4, $5)
                         "#,
-                        provider as AuthProvider,
+                        provider.as_str(),
                         &message.provider_user_id,
                         message.provider_username.as_deref(),
                         message.provider_display_name.as_deref(),
-                        PgInterval::try_from(res.refresh_token_lifetime.unwrap_or(Duration::ZERO))
+                        PgInterval::try_from(res.rest.refresh_token_lifetime.unwrap_or(Duration::ZERO))
                             .map_err(|_| anyhow::anyhow!("Failed to convert access token lifetime"))?,
                     )
-                        .fetch_one(&res.pool)
+                        .fetch_one(&res.rest.pool)
                         .await
                         .into_precept_result()?
                         .try_decompose(provider, message.provider_username, message.provider_display_name)?;
-                    let session = res.refresh_token_lifetime.and(Some(session));
+                    let session = res.rest.refresh_token_lifetime.and(Some(session));
                     entry.status = LoginAttemptStatus::Success {
                         user: user.clone(),
                         account: account.clone(),
                         session: session.clone(),
                     };
-                    Ok(crate::auth::dto::ConfirmLoginResponse { user, account, session })
+                    Ok(crate::auth::dto::ConfirmLoginResponse {
+                        user,
+                        account,
+                        session,
+                    })
                 } else {
                     Err(precept::Error::NotFound)
                 }

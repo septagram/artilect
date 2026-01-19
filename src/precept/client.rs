@@ -1,9 +1,16 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use cfg_block::cfg_block;
+use derive_more::From;
 use serde::de::DeserializeOwned;
 
-use super::{Error, Identity, IntoPreceptSpecificResultTyped, SignedMessage, UnauthorizedError};
+use super::{
+    Error, Identity, IntoPreceptSpecificResultTyped, Message, SignedMessage, UnauthorizedError,
+};
+use crate::orchestra::PlexusClientBase;
+#[cfg(feature = "client-http2")]
+use crate::orchestra;
 
 cfg_block! {
     #[cfg(feature = "backend")] {
@@ -23,11 +30,11 @@ cfg_block! {
                 (Self { addr: addr.clone() }, addr)
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, _client: Option<HttpClient>) -> ClientLocal<T> {
-                ClientLocal::<T> {
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<ClientLocal<T>, crate::orchestra::Error> {
+                Ok(ClientLocal::<T> {
                     addr: self.addr.clone(),
-                    client_id: client_id.expect("Client ID must be set for local precepts"),
-                }
+                    client_id: client_base.local_identity.ok_or(crate::orchestra::Error::NoLocalIdentity)?,
+                })
             }
         }
 
@@ -66,6 +73,8 @@ cfg_block! {
             }
         }
 
+        impl <T: actix::Actor> Eq for ClientLocal<T> {}
+
         impl<T: actix::Actor> PartialEq for ClientLocal<T> {
             fn eq(&self, other: &Self) -> bool {
                 self.addr == other.addr && self.client_id == other.client_id
@@ -97,31 +106,40 @@ cfg_block! {
 
     #[cfg(feature = "client-http2")] {
         use super::HttpErrorBodyBadRequest;
-        mod http;
-        use http::HttpClient;
+        use crate::orchestra::PlexusClientBaseRemote;
+        pub use super::secret_provider::SecretProvider;
 
         #[derive(Clone, PartialEq)]
         pub struct AddrRemote {
-            base_url: Arc<str>,
+            prefixed_url: Arc<url::Url>,
         }
 
         impl AddrRemote {
-            pub fn new(base_url: Arc<str>) -> Self {
-                Self { base_url }
+            pub fn new(prefixed_url: Arc<url::Url>) -> Self {
+                Self { prefixed_url }
             }
 
-            pub fn to_client(&self, _client_id: Option<Identity>, client: Option<HttpClient>) -> ClientRemote {
-                ClientRemote {
-                    client: client.expect("Client must be provided for remote precepts"),
-                    base_url: self.base_url.clone(),
-                }
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<ClientRemote, orchestra::Error> {
+                let Some(PlexusClientBaseRemote {
+                    secret_provider,
+                    reqwest_client,
+                }) = client_base.remote
+                else {
+                    return crate::orchestra::Error::NoSecretProvider.into();
+                };
+                Ok(ClientRemote {
+                    client: reqwest_client,
+                    prefixed_url: self.prefixed_url.clone(),
+                    secret_provider,
+                })
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone)]
         pub struct ClientRemote {
-            client: HttpClient,
-            base_url: Arc<str>,
+            client: reqwest::Client,
+            prefixed_url: Arc<url::Url>,
+            secret_provider: Arc<SecretProvider>,
         }
 
         impl ClientRemote {
@@ -130,15 +148,30 @@ cfg_block! {
                 S: super::MessageRemoteStrategy,
                 S::Response: DeserializeOwned,
             {
-                self.client.send(msg).await
-                // let request = msg.into_request(self.client.client().await, self.base_url.as_ref());
-                // request.send().await.into_precept_result_t::<S::Response>().await
+                self.secret_provider
+                    .ensure_valid_token(&self.client)
+                    .await?;
+                msg.into_request(&self.client, &*self.prefixed_url)
+                    .with_context(|| format!("Failed to build request for {}", std::any::type_name::<S>()))?
+                    .send()
+                    .await
+                    .into_precept_result_t::<S::Response>()
+                    .await
             }
         }
+
+        impl Eq for ClientRemote {}
+
+        impl PartialEq for ClientRemote {
+            fn eq(&self, other: &Self) -> bool {
+                self.secret_provider == other.secret_provider && self.prefixed_url == other.prefixed_url
+            }
+        }
+
     }
 
     #[cfg(all(feature = "backend", feature = "client-http2"))] {
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone, PartialEq, From)]
         pub enum Addr<P: actix::Actor> {
             Local(AddrLocal<P>),
             Remote(AddrRemote),
@@ -150,19 +183,19 @@ cfg_block! {
                 (Self::Local(addr), set_addr)
             }
 
-            pub fn new_remote(base_url: Arc<str>) -> Self {
-                Self::Remote(AddrRemote::new(base_url))
+            pub fn new_remote(prefixed_url: Arc<url::Url>) -> Self {
+                Self::Remote(AddrRemote::new(prefixed_url))
             }
 
-            pub fn to_client(&self, client_id: Option<Identity>, client: Option<HttpClient>) -> Client<P> {
-                match self {
-                    Self::Local(addr) => Client::Local(addr.to_client(client_id, client)),
-                    Self::Remote(addr) => Client::Remote(addr.to_client(client_id, client)),
-                }
+            pub fn to_client(&self, client_base: &PlexusClientBase) -> Result<Client<P>, crate::orchestra::Error> {
+                Ok(match self {
+                    Self::Local(addr) => Client::Local(addr.to_client(client_base)?),
+                    Self::Remote(addr) => Client::Remote(addr.to_client(client_base)?),
+                })
             }
         }
 
-        #[derive(Clone, PartialEq)]
+        #[derive(Clone, PartialEq, Eq)]
         pub enum Client<P: actix::Actor> {
             Local(ClientLocal<P>),
             Remote(ClientRemote),

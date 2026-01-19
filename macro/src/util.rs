@@ -12,6 +12,7 @@ pub fn take_attribute(attr_name: &str, attrs: &mut Vec<syn::Attribute>) -> Optio
         .map(|pos| attrs.remove(pos))
 }
 
+#[allow(dead_code)]
 pub fn capitalize(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
@@ -19,7 +20,12 @@ pub fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
-pub fn unpack_generic(ty: &syn::Type, expected_types: &[&str], checked_value: &str) -> Box<syn::Type> {
+
+pub fn unpack_generic(
+    ty: &syn::Type,
+    expected_types: &[&str],
+    checked_value: &str,
+) -> Box<syn::Type> {
     let mut current_type = ty;
 
     for expected_type in expected_types {
@@ -31,10 +37,14 @@ pub fn unpack_generic(ty: &syn::Type, expected_types: &[&str], checked_value: &s
                     .last()
                     .map(|s| s.ident == expected_type)
                     .unwrap_or(false) =>
-                    {
-                        type_path
-                    }
-            _ => panic!("{} must be wrapped in {}", checked_value, expected_types.join("<") + &">".repeat(expected_types.len())),
+            {
+                type_path
+            }
+            _ => panic!(
+                "{} must be wrapped in {}",
+                checked_value,
+                expected_types.join("<") + &">".repeat(expected_types.len())
+            ),
         };
 
         let syn::PathArguments::AngleBracketed(args) =
