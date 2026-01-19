@@ -17,6 +17,8 @@ jj commit      # instead of git commit (note: jj commit works differently)
 jj log         # instead of git log
 ```
 
+**Important:** After finishing a plan (completing a significant unit of work), always commit with `jj commit -m "description"`.
+
 ## Build System & Commands
 
 ### Building Binaries
