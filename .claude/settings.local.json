@@ -16,7 +16,12 @@
       "Bash(jj status:*)",
       "Bash(jj log:*)",
       "Bash(jj commit:*)",
-      "Bash(just cortex check:*)"
+      "Bash(just cortex check:*)",
+      "Bash(file:*)",
+      "Bash(git diff-index:*)",
+      "Bash(git hash-object:*)",
+      "Bash(git update-index:*)",
+      "Bash(jj diff:*)"
     ],
     "deny": [],
     "ask": []
