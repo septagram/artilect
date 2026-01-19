@@ -9,6 +9,8 @@ use super::{
     Error, Identity, IntoPreceptSpecificResultTyped, Message, SignedMessage, UnauthorizedError,
 };
 use crate::orchestra::PlexusClientBase;
+#[cfg(feature = "client-http2")]
+use crate::orchestra;
 
 pub enum OnlyRemote {}
 
@@ -134,7 +136,7 @@ cfg_block! {
                 };
                 Ok(ClientRemote {
                     client: reqwest_client,
-                    prefixed_url,
+                    prefixed_url: self.prefixed_url.clone(),
                     secret_provider,
                 })
             }

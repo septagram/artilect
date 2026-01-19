@@ -21,7 +21,9 @@
       "Bash(git diff-index:*)",
       "Bash(git hash-object:*)",
       "Bash(git update-index:*)",
-      "Bash(jj diff:*)"
+      "Bash(jj diff:*)",
+      "Bash(just get-required-features:*)",
+      "Bash(cargo clean:*)"
     ],
     "deny": [],
     "ask": []

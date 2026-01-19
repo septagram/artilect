@@ -26,6 +26,9 @@ use crate::{
 //
 // ...to be fair, there's plenty of custom logic here...
 
+#[cfg(not(any(feature = "backend", feature = "native")))]
+compile_error!("SecretProvider requires either 'backend' or 'native' feature");
+
 pub const KEYRING_SERVICE_NAME: &str = "artilect";
 
 struct HeaderExpPair {

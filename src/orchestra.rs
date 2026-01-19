@@ -1,6 +1,11 @@
-use std::{any::TypeId, collections::HashMap, sync::Arc};
+use std::sync::Arc;
+#[cfg(any(feature = "server-http2", feature = "client-http2"))]
+use std::collections::HashMap;
+#[cfg(feature = "server-http2")]
+use std::any::TypeId;
 
 use anyhow::Context;
+#[cfg(feature = "backend")]
 use anymap3::AnyMap;
 use bon::bon;
 use cfg_block::cfg_block;
@@ -43,6 +48,12 @@ cfg_block! {
                     refresh_token: refresh_token_url,
                     login: login_url,
                 })
+            }
+        }
+
+        impl std::fmt::Display for BaseUrl {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.base.fmt(f)
             }
         }
     }
