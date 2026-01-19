@@ -17,6 +17,7 @@ use crate::precept::{Precept, PreceptConstructor};
 
 cfg_block! {
     #[cfg(feature = "client-http2")] {
+        #[derive(Clone, PartialEq, Eq)]
         pub struct BaseUrl {
             pub base: url::Url,
             pub refresh_token: url::Url,
@@ -308,7 +309,7 @@ struct PlexusBase {
     pub router: axum::Router,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PlexusClientBase {
     #[cfg(feature = "backend")]
     pub local_identity: Option<Identity>,
@@ -317,6 +318,7 @@ pub struct PlexusClientBase {
 }
 
 #[cfg(feature = "client-http2")]
+#[derive(Clone)]
 pub struct PlexusClientBaseRemote {
     pub secret_provider: Arc<precept::client::SecretProvider>,
     pub reqwest_client: reqwest::Client,
@@ -435,13 +437,26 @@ cfg_block! {
     #[cfg(feature = "frontend")] {
         use dioxus::prelude::*;
 
-        // TODO: Implement alternative using per-precept hooks returning precept::client::Client(|Local|Remote)
-        // pub fn use_plexus_client(plexus_client: &PlexusClient) {
-        //     let mut plexus_client_signal = use_context_provider(|| Signal::new(plexus_client));
-        //     use_effect(use_reactive!(|plexus_client| {
-        //         let mut write = plexus_client_signal.write();
-        //         *write = plexus_client;
-        //     }));
-        // }
+        /// Hook to get a specific precept client from the plexus.
+        ///
+        /// # Type Parameters
+        /// - `C`: The client type to retrieve (e.g., `chat::Client`)
+        /// - `P`: The plexus type (usually inferred from the `plexus` argument)
+        ///
+        /// # Example
+        /// ```ignore
+        /// let plexus = use_context::<Signal<Arc<Plexus>>>();
+        /// let base = use_context::<Signal<PlexusClientBase>>();
+        /// let chat_client: Memo<chat::Client> = use_client(plexus, base);
+        /// ```
+        pub fn use_client<C, P>(plexus: Signal<Arc<P>>, base: Signal<PlexusClientBase>) -> Memo<C>
+        where
+            P: GetClient<C> + 'static,
+            C: Clone + PartialEq + 'static,
+        {
+            use_memo(move || {
+                plexus.read().get_client(&*base.read()).expect("Failed to get client")
+            })
+        }
     }
 }
