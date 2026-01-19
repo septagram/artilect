@@ -12,13 +12,6 @@ use crate::orchestra::PlexusClientBase;
 #[cfg(feature = "client-http2")]
 use crate::orchestra;
 
-pub enum OnlyRemote {}
-
-// trait AddrTrait {
-//     fn send<S: Message>(&self, msg: S) -> impl Future<Output = super::Result<S::Response>>;
-//     // that's actually a client, not an addr
-// }
-
 cfg_block! {
     #[cfg(feature = "backend")] {
         use tokio::sync::SetOnce;

@@ -23,7 +23,8 @@
       "Bash(git update-index:*)",
       "Bash(jj diff:*)",
       "Bash(just get-required-features:*)",
-      "Bash(cargo clean:*)"
+      "Bash(cargo clean:*)",
+      "Bash(jj bookmark:*)"
     ],
     "deny": [],
     "ask": []
