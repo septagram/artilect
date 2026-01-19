@@ -17,7 +17,26 @@ jj commit      # instead of git commit (note: jj commit works differently)
 jj log         # instead of git log
 ```
 
-**Important:** After finishing a plan (completing a significant unit of work), always commit with `jj commit -m "description"`.
+### Commit Workflow
+
+**Quick WIP commits** - Use for work-in-progress, unstable states:
+```bash
+jj commit -m "description"
+```
+
+**Proper feature merges** - Use when completing a significant unit of work:
+```bash
+/merge-feature feat/14-auth
+```
+
+The `/merge-feature` command will:
+1. Find the last commit with issue ID `[A##]`
+2. Review all changes since then
+3. Suggest cleanup items
+4. Create a non-ff merge with proper issue ID
+5. Update the feature bookmark
+
+Issue ID format: `[A##]` (e.g., `[A14]` for issue 14)
 
 ## Build System & Commands
 
