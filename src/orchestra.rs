@@ -100,8 +100,8 @@ pub enum Error {
     #[error("Missing secret provider in PlexusClientBase")]
     NoSecretProvider,
     #[cfg(feature = "backend")]
-    #[error("Failed to initialize precept: {0:?}")]
-    PreceptInitFailed(PreceptID),
+    #[error("Precept already initialized: {0:?}")]
+    PreceptAlreadyInitialized(PreceptID),
 }
 
 impl PlexusBuilder {
@@ -169,7 +169,7 @@ impl PlexusBuilder {
 
             // 4. Set address
             setter.set(actix_addr.clone()).map_err(|_| {
-                Error::PreceptInitFailed(precept_id)
+                Error::PreceptAlreadyInitialized(precept_id)
             })?;
 
             // 5. Router setup (if exposed)
@@ -179,7 +179,7 @@ impl PlexusBuilder {
                 router = router.merge(T::build_router(&actix_addr));
                 match prefix {
                     None => plexus.base.router = router,
-                    Some(prefix) => plexus.base.router = std::mem::take(&mut plexus.base.router).nest(&prefix, router),
+                    Some(prefix) => plexus.base.router = plexus.base.router.nest(&prefix, router),
                 }
             }
 
@@ -187,9 +187,7 @@ impl PlexusBuilder {
         }));
 
         #[cfg(feature = "server-http2")]
-        {
-            self.s_last = Some(TypeId::of::<T>());
-        }
+        self.s_last = Some(TypeId::of::<T>());
         Ok(self)
     }
 
@@ -238,7 +236,7 @@ impl PlexusBuilder {
     }
 
     fn take<T: SetupAddr>(&mut self, name: &'static str) -> Result<T, Error> {
-        T::from_local(self)?
+        T::from_local(self)
             .or_else(|| T::from_remote(self, name))
             .ok_or(Error::NoPrecept)
     }
@@ -259,8 +257,8 @@ impl PlexusBuilder {
 }
 
 trait SetupAddr: Sized {
-    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
-        Ok(None)
+    fn from_local(builder: &mut PlexusBuilder) -> Option<Self> {
+        None
     }
 
     fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
@@ -270,8 +268,8 @@ trait SetupAddr: Sized {
 
 #[cfg(feature = "backend")]
 impl<T: PreceptConstructor> SetupAddr for precept::client::AddrLocal<T> {
-    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
-        Ok(builder.l_precepts.remove::<Self>())
+    fn from_local(builder: &mut PlexusBuilder) -> Option<Self> {
+        builder.l_precepts.remove::<Self>()
     }
 }
 
@@ -284,8 +282,8 @@ impl SetupAddr for precept::client::AddrRemote {
 
 #[cfg(all(feature = "backend", feature = "client-http2"))]
 impl<T: PreceptConstructor> SetupAddr for precept::client::Addr<T> {
-    fn from_local(builder: &mut PlexusBuilder) -> Result<Option<Self>, anyhow::Error> {
-        Ok(builder.l_precepts.remove::<precept::client::AddrLocal<T>>().map(Into::into))
+    fn from_local(builder: &mut PlexusBuilder) -> Option<Self> {
+        builder.l_precepts.remove::<precept::client::AddrLocal<T>>().map(Into::into)
     }
 
     fn from_remote(builder: &mut PlexusBuilder, name: &'static str) -> Option<Self> {
