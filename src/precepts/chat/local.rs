@@ -20,7 +20,7 @@ use super::dto::{
 use crate::{
     auth::User,
     infer::{self, PlainText, RootChain},
-    orchestra::PlexusClient,
+    orchestra::Injector,
     precept::{
         self, IntoPreceptResult, Identity, MessageLocalStrategy, PreceptConstructor, PreceptID,
         SignedMessage,
@@ -70,7 +70,6 @@ pub struct Config {
 }
 
 pub struct Resources {
-    pub plexus: PlexusClient,
     pub pool: PgPool,
     pub self_user: User,
     pub system_prompt: RootChain,
@@ -81,22 +80,21 @@ pub struct Precept {
     resources: Arc<Resources>,
 }
 
-impl PreceptConstructor for Precept {
+impl PreceptConstructor<crate::orchestra::Plexus> for Precept {
     type Config = Config;
-    fn new(plexus_client: PlexusClient, config: Config) -> Self {
+    fn new(_injector: &Injector<'_, crate::orchestra::Plexus>, config: Config) -> Result<Self, anyhow::Error> {
         let Config {
             pool,
             self_user,
             system_prompt,
         } = config;
-        Self {
+        Ok(Self {
             resources: Arc::new(Resources {
-                plexus: plexus_client,
                 pool,
                 self_user,
                 system_prompt,
             }),
-        }
+        })
     }
     fn id(_config: &Self::Config) -> PreceptID {
         PreceptID::Chat

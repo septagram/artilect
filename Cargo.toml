@@ -20,7 +20,7 @@ required-features = ["auth-front", "auth-out", "chat-front", "chat-out"]
 [[bin]]
 name = "artilect-cortex"
 path = "src/bin/artilect_cortex.rs"
-required-features = ["auth-in", "chat-in", "telegram-in"]
+required-features = ["auth-in", "chat-in", "telegram-in", "server-http2"]
 
 [[bin]]
 name = "artilect-minicortex"

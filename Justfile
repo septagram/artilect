@@ -5,6 +5,10 @@ set shell := ["C:/Program Files/Git/bin/bash.exe", "-c"]
 get-required-features bin:
     @yq eval '.bin[] | select(.name == "{{bin}}") | .required-features | join(" ")' Cargo.toml -o=toml
 
+# Artilect Cortex - backend with all precepts (usage: just cortex [run|build|check])
+cortex action="run":
+    cargo {{action}} --bin=artilect-cortex --features="$(just get-required-features artilect-cortex)"
+
 # Auth Service (usage: just auth [run|build])
 auth action="run":
     cargo {{action}} --bin=auth --features="$(just get-required-features auth)"

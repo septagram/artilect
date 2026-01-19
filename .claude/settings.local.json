@@ -15,7 +15,8 @@
       "Skill(rust-preferences)",
       "Bash(jj status:*)",
       "Bash(jj log:*)",
-      "Bash(jj commit:*)"
+      "Bash(jj commit:*)",
+      "Bash(just cortex check:*)"
     ],
     "deny": [],
     "ask": []

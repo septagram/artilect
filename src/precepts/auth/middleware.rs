@@ -10,7 +10,7 @@ use axum::{
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Validation, decode, encode};
 use keyring::Entry;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use time::{OffsetDateTime, UtcOffset};
 use uuid::Uuid;
@@ -20,18 +20,39 @@ use crate::{
     precept::{Identity, UnauthorizedError},
 };
 
+/// Global JWT keys for validation and signing, set by auth precept during initialization
+static DECODING_KEY: OnceCell<Arc<DecodingKey>> = OnceCell::new();
+static ENCODING_KEY: OnceCell<Arc<EncodingKey>> = OnceCell::new();
+
+/// Set the global JWT keys. Should be called once during auth precept initialization.
+pub fn set_global_jwt_keys(encoding: Arc<EncodingKey>, decoding: Arc<DecodingKey>) -> Result<(), &'static str> {
+    ENCODING_KEY.set(encoding).map_err(|_| "Encoding key already set")?;
+    DECODING_KEY.set(decoding).map_err(|_| "Decoding key already set")?;
+    Ok(())
+}
+
+/// Get the global decoding key. Panics if not set.
+pub fn get_global_decoding_key() -> Arc<DecodingKey> {
+    DECODING_KEY.get().expect("JWT decoding key not initialized - auth precept must be started first").clone()
+}
+
+/// Get the global encoding key. Panics if not set.
+pub fn get_global_encoding_key() -> Arc<EncodingKey> {
+    ENCODING_KEY.get().expect("JWT encoding key not initialized - auth precept must be started first").clone()
+}
+
 pub const KEYRING_SERVICE_NAME: &str = "artilect-cortex";
 pub const JWT_SECRET_NAME: &str = "jwt-secret";
 
 pub fn get_secret(instance_id: &str, secret_name: &str) -> Result<Box<[u8]>, anyhow::Error> {
-    let context = |reason| || format!("{reason} JWT secret for instance {}", instance_id);
+    let context = |reason: &str| format!("{reason} JWT secret for instance {}", instance_id);
     let entry = Entry::new(
         format!("{}.{}", instance_id, KEYRING_SERVICE_NAME).as_str(),
         secret_name,
     )
-    .with_context(context("Invalid keyring name for"))?;
+    .with_context(|| context("Invalid keyring name for"))?;
     match entry.get_secret() {
-        Ok(secret) => Ok(Arc::from(secret)),
+        Ok(secret) => Ok(secret.into_boxed_slice()),
         Err(err) => match err {
             keyring::Error::NoEntry => {
                 // Generate cryptographically secure random secret
@@ -41,11 +62,11 @@ pub fn get_secret(instance_id: &str, secret_name: &str) -> Result<Box<[u8]>, any
                 // Store it in keyring
                 entry
                     .set_secret(&secret)
-                    .with_context(context("Failed to store"))?;
+                    .with_context(|| context("Failed to store"))?;
 
-                secret.into()
+                Ok(Box::from(secret))
             }
-            _ => Err(err).context(context("Failed to retrieve")()),
+            _ => Err(err).with_context(|| context("Failed to retrieve")),
         },
     }
 }
@@ -207,20 +228,25 @@ async fn jwt<Claims: JwtClaims>(
     }
 }
 
+// @todo: RouterAuth currently uses global static keys (ENCODING_KEY, DECODING_KEY) which breaks
+// multi-instance support. After removing Actix, refactor to pass keys through router state.
+// The chicken-egg problem: routes need actix::Addr for message passing AND DecodingKey for JWT,
+// but Addr doesn't exist until after precept.start() consumes the precept.
+// With tokio::mpsc channels (post-Actix), we can create the sender before the consumer exists.
 pub trait RouterAuth {
-    fn require_access_token(self, decoding_key: Arc<DecodingKey>) -> Self;
-    fn require_refresh_token(self, decoding_key: Arc<DecodingKey>) -> Self;
+    fn require_access_token(self) -> Self;
+    fn require_refresh_token(self) -> Self;
 }
 
 impl<T> RouterAuth for Router<T>
 where
     T: Clone + Send + Sync + 'static,
 {
-    fn require_access_token(self, decoding_key: Arc<DecodingKey>) -> Self {
-        self.layer(from_fn_with_state(decoding_key, jwt::<JwtClaimsAccess>))
+    fn require_access_token(self) -> Self {
+        self.layer(from_fn_with_state(get_global_decoding_key(), jwt::<JwtClaimsAccess>))
     }
 
-    fn require_refresh_token(self, decoding_key: Arc<DecodingKey>) -> Self {
-        self.layer(from_fn_with_state(decoding_key, jwt::<JwtClaimsRefresh>))
+    fn require_refresh_token(self) -> Self {
+        self.layer(from_fn_with_state(get_global_decoding_key(), jwt::<JwtClaimsRefresh>))
     }
 }

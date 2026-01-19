@@ -6,6 +6,7 @@
     const_option_ops,
     try_blocks,
     min_specialization,
+    stmt_expr_attributes,
 )]
 
 use uuid::Uuid;

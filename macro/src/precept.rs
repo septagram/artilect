@@ -167,11 +167,11 @@ pub fn precept_struct(attr: TokenStream, mut struct_def: syn::ItemStruct) -> Tok
         false => Some(parse_quote! {
             #[cfg(feature = "server-http2")]
             impl crate::precept::Routable for actix::Addr<#struct_name> {
-                fn build_router(self) -> axum::Router {
+                fn build_router(&self) -> axum::Router {
                     use crate::auth::middleware::RouterAuth;
                     let mut router = axum::Router::new();
                     #(router = #message_type_iter::route(router);)*
-                    router.with_state(self).require_access_token()
+                    router.with_state(self.clone()).require_access_token()
                 }
             }
         }),

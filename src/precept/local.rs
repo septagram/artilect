@@ -1,5 +1,5 @@
 use cfg_block::cfg_block;
-use crate::orchestra::PlexusClient;
+use crate::orchestra::Injector;
 use crate::precept::client::AddrLocal;
 use super::{Error, Message, PreceptID, SignedMessage};
 
@@ -18,10 +18,9 @@ pub trait Precept: actix::Actor<Context = actix::Context<Self>> {
     // fn new(resources: Self::Resources) -> Self;
 }
 
-pub trait PreceptConstructor: Precept {
+pub trait PreceptConstructor<P>: Precept {
     type Config;
-    type PlexusClient;
-    fn new(plexus_client: Self::PlexusClient, config: Self::Config) -> Result<Self, anyhow::Error>;
+    fn new(injector: &Injector<'_, P>, config: Self::Config) -> Result<Self, anyhow::Error>;
     fn id(config: &Self::Config) -> PreceptID;
 }
 
@@ -72,6 +71,10 @@ cfg_block! {
 
         impl<T> Routable for AddrLocal<T> where T: Precept {
             fn build_router(&self) -> axum::Router { axum::Router::new() }
+        }
+
+        impl<T> Routable for actix::Addr<T> where T: Precept {
+            default fn build_router(&self) -> axum::Router { axum::Router::new() }
         }
 
         #[cfg(feature = "client-http2")]

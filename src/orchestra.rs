@@ -8,9 +8,12 @@ use thiserror::Error;
 use url::Url;
 
 use crate::{
-    precept::{self, Identity, Precept, PreceptConstructor, PreceptID},
+    precept::{self, Identity, PreceptID},
     precepts,
 };
+
+#[cfg(feature = "backend")]
+use crate::precept::{Precept, PreceptConstructor};
 
 cfg_block! {
     #[cfg(feature = "client-http2")] {
@@ -104,6 +107,10 @@ pub enum Error {
     PreceptAlreadyInitialized(PreceptID),
 }
 
+pub trait GetClient<C> {
+    fn get_client(&self, base: &PlexusClientBase) -> Result<C, Error>;
+}
+
 impl PlexusBuilder {
     pub fn new() -> Self {
         Self::default()
@@ -125,7 +132,7 @@ impl PlexusBuilder {
     }
 
     #[cfg(feature = "backend")]
-    pub fn local_precept<T: PreceptConstructor>(
+    pub fn local_precept<T: PreceptConstructor<Plexus>>(
         &mut self,
         config: T::Config,
     ) -> Result<&mut Self, Error> {
@@ -154,7 +161,7 @@ impl PlexusBuilder {
             // 1. Create precept (reborrow as shared for injector)
             let precept = {
                 let base = PlexusClientBase::builder()
-                    .local_identity(Some(Identity::Precept(precept_id)))
+                    .local_identity(Identity::Precept { id: precept_id, on_behalf_of: None })
                     .build();
                 let injector = Injector::new(&*plexus, base);
                 T::new(&injector, config)?
@@ -162,7 +169,7 @@ impl PlexusBuilder {
 
             // 2. Build router from precept BEFORE starting (some routes need precept ref)
             #[cfg(feature = "server-http2")]
-            let router_from_precept = expose_at.as_ref().map(|_| T::build_router(&precept));
+            let router_from_precept = expose_at.as_ref().map(|_| precept.build_router());
 
             // 3. Start precept (consumes it)
             let actix_addr = precept.start();
@@ -176,10 +183,13 @@ impl PlexusBuilder {
             #[cfg(feature = "server-http2")]
             if let Some(prefix) = expose_at {
                 let mut router = router_from_precept.unwrap_or_default();
-                router = router.merge(T::build_router(&actix_addr));
+                router = router.merge(actix_addr.build_router());
                 match prefix {
                     None => plexus.base.router = router,
-                    Some(prefix) => plexus.base.router = plexus.base.router.nest(&prefix, router),
+                    Some(prefix) => {
+                        let base_router = std::mem::take(&mut plexus.base.router);
+                        plexus.base.router = base_router.nest(&prefix, router);
+                    }
                 }
             }
 
@@ -267,7 +277,7 @@ trait SetupAddr: Sized {
 }
 
 #[cfg(feature = "backend")]
-impl<T: PreceptConstructor> SetupAddr for precept::client::AddrLocal<T> {
+impl<T: PreceptConstructor<Plexus>> SetupAddr for precept::client::AddrLocal<T> {
     fn from_local(builder: &mut PlexusBuilder) -> Option<Self> {
         builder.l_precepts.remove::<Self>()
     }
@@ -281,7 +291,7 @@ impl SetupAddr for precept::client::AddrRemote {
 }
 
 #[cfg(all(feature = "backend", feature = "client-http2"))]
-impl<T: PreceptConstructor> SetupAddr for precept::client::Addr<T> {
+impl<T: PreceptConstructor<Plexus>> SetupAddr for precept::client::Addr<T> {
     fn from_local(builder: &mut PlexusBuilder) -> Option<Self> {
         builder.l_precepts.remove::<precept::client::AddrLocal<T>>().map(Into::into)
     }
@@ -348,7 +358,7 @@ impl PlexusClientBase {
     }
 }
 
-struct Plexus {
+pub struct Plexus {
     base: PlexusBase,
     #[cfg(feature = "auth")]
     auth: precepts::auth::Addr,
@@ -373,37 +383,53 @@ impl TryFrom<PlexusBuilder> for Plexus {
     }
 }
 
+#[cfg(feature = "auth")]
+impl GetClient<precepts::auth::Client> for Plexus {
+    fn get_client(&self, base: &PlexusClientBase) -> Result<precepts::auth::Client, Error> {
+        self.auth.to_client(base)
+    }
+}
+
+#[cfg(feature = "chat")]
+impl GetClient<precepts::chat::Client> for Plexus {
+    fn get_client(&self, base: &PlexusClientBase) -> Result<precepts::chat::Client, Error> {
+        self.chat.to_client(base)
+    }
+}
+
+#[cfg(feature = "telegram")]
+impl GetClient<precepts::telegram::Client> for Plexus {
+    fn get_client(&self, base: &PlexusClientBase) -> Result<precepts::telegram::Client, Error> {
+        self.telegram.to_client(base)
+    }
+}
+
 impl Plexus {
-    pub fn to_injector(&self, base: PlexusClientBase) -> Injector<'_> {
+    pub fn to_injector(&self, base: PlexusClientBase) -> Injector<'_, Self> {
         Injector::new(self, base)
     }
 }
 
-pub struct Injector<'a> {
+pub struct Injector<'a, P> {
     base: PlexusClientBase,
-    plexus: &'a Plexus,
+    plexus: &'a P,
 }
 
-impl<'a> Injector<'a> {
-    fn new(plexus: &'a Plexus, base: PlexusClientBase) -> Self {
+impl<'a, P> Injector<'a, P> {
+    fn new(plexus: &'a P, base: PlexusClientBase) -> Self {
         Self { base, plexus }
     }
 
-    #[cfg(feature = "auth")]
-    pub fn auth(&self) -> Result<precepts::auth::Client, Error> {
-        self.plexus.auth.to_client(&self.base)
-    }
-
-    #[cfg(feature = "chat")]
-    pub fn chat(&self) -> Result<precepts::chat::Client, Error> {
-        self.plexus.chat.to_client(&self.base)
-    }
-
-    #[cfg(feature = "telegram")]
-    pub fn telegram(&self) -> Result<precepts::telegram::Client, Error> {
-        self.plexus.telegram.to_client(&self.base)
+    pub fn get<C>(&self) -> Result<C, Error>
+    where
+        P: GetClient<C>,
+    {
+        self.plexus.get_client(&self.base)
     }
 }
+
+/// Type alias for precepts that receive an injector reference.
+pub type PlexusClient<'a> = &'a Injector<'a, Plexus>;
 
 cfg_block! {
     #[cfg(feature = "frontend")] {
